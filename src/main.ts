@@ -29,6 +29,7 @@ app.on('ready', () => {
       return { success: false, error: (error as Error).message };
     }
   });
+  
   createWindow();
 
   app.on('activate', () => {
