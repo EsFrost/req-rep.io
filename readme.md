@@ -2,7 +2,7 @@
 
 ## Req-Rep.io is a simple HTTP client for Windows, Linux and macOS.
 
-It is created using the Electron framework (there are size and performance issues). The reason I chose electron over a more robust solution is that I have worked with ts and electron before and it is faster, easier and more pleasant to develop with.
+It was created using the Electron framework which I have worked with before and I find using it faster, easier and more enjoyable to develop with.
 
 ## Why Req-Rep.io ?
 
@@ -14,7 +14,7 @@ Req-Rep.io does not use any sort of accounts, does not collect any sort of data 
 
 ### Why not curl ?
 
-In case you want an intuitive app with GUI since curl is a command line tool and you might not want to remember all the flags and options. On the other hand, as mentionend before, if any command or flag is missing, you can always add it yourself or request for it to be added.
+In case you want an intuitive app with GUI since curl is a command line tool and you might not want to remember all the flags and options. On the other hand, as mentioned before, if any command or flag is missing, you can always add it yourself or request for it to be added.
 
 *I hope you find this project useful, intuitive, easy to use, easy to modify and instructive.*
 
