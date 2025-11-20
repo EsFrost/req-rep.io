@@ -43,7 +43,6 @@ The content is organized as follows:
 .gitignore
 index.html
 package.json
-src/input.css
 src/main/index.ts
 src/main/ipc/handlers.ts
 src/main/ipc/request-handler.ts
@@ -71,12 +70,6 @@ tsconfig.renderer.json
 <files>
 This section contains the contents of the repository's files.
 
-<file path="src/input.css">
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-</file>
-
 <file path="src/main/index.ts">
 import { app, BrowserWindow } from 'electron';
 import { createWindow } from './window';
@@ -98,29 +91,6 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
-</file>
-
-<file path="src/main/ipc/handlers.ts">
-import { ipcMain } from 'electron';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { FetchResponse } from '../../shared/types';
-
-const execAsync = promisify(exec);
-
-export const registerHandlers = (): void => {
-  ipcMain.handle('fetch-url', async (_event, url: string): Promise<FetchResponse> => {
-    try {
-      const { stdout, stderr } = await execAsync(`curl -s "${url}"`);
-      if (stderr) {
-        return { success: false, error: stderr };
-      }
-      return { success: true, data: stdout };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
-  });
-};
 </file>
 
 <file path="src/main/window.ts">
@@ -153,42 +123,6 @@ contextBridge.exposeInMainWorld('electron', {
 });
 </file>
 
-<file path="src/renderer/index.ts">
-import { FetchResponse } from '../shared/types';
-
-declare global {
-  interface Window {
-    electron: {
-      fetchUrl: (url: string) => Promise<FetchResponse>;
-    };
-  }
-}
-
-const fetchButton = document.getElementById('fetch') as HTMLButtonElement;
-const urlInput = document.getElementById('url') as HTMLInputElement;
-const resultDiv = document.getElementById('result') as HTMLDivElement;
-
-fetchButton.addEventListener('click', async () => {
-  try {
-    const response = await window.electron.fetchUrl(urlInput.value);
-    if (response.success) {
-      resultDiv.textContent = response.data || '';
-    } else {
-      resultDiv.textContent = `Error: ${response.error}`;
-    }
-  } catch (error) {
-    console.error(error);
-    resultDiv.textContent = 'An error occurred';
-  }
-});
-</file>
-
-<file path="src/styles/input.css">
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-</file>
-
 <file path="tailwind.config.js">
 module.exports = {
   content: ["./*.html", "./dist/**/*.js"],
@@ -207,6 +141,261 @@ node_modules
 styles.css
 
 dist
+</file>
+
+<file path="src/main/ipc/handlers.ts">
+import { ipcMain } from 'electron';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { FetchResponse } from '../../shared/types';
+
+const execAsync = promisify(exec);
+
+export const registerHandlers = (): void => {
+  ipcMain.handle('fetch-url', async (_event, url: string): Promise<FetchResponse> => {
+    try {
+      // Use curl with -w flag to get HTTP status code
+      const { stdout, stderr } = await execAsync(`curl -s -w "\\n%{http_code}" "${url}"`);
+      
+      if (stderr) {
+        return { success: false, error: stderr };
+      }
+      
+      // Split response body and status code
+      const lines = stdout.trim().split('\n');
+      const statusCode = parseInt(lines[lines.length - 1]);
+      const body = lines.slice(0, -1).join('\n');
+      
+      return { 
+        success: true, 
+        data: body,
+        statusCode: statusCode
+      };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
+  });
+};
+</file>
+
+<file path="src/styles/input.css">
+@import 'highlight.js/styles/atom-one-dark.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  #result pre {
+    @apply m-0 bg-transparent;
+  }
+  
+  #result code {
+    @apply block p-4 rounded font-mono text-sm leading-relaxed;
+  }
+}
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true
+  },
+  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*"],
+  "exclude": ["node_modules", "src/renderer/**/*"]
+}
+</file>
+
+<file path="tsconfig.renderer.json">
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true
+  },
+  "include": ["src/renderer/**/*", "src/shared/**/*"],
+  "exclude": ["node_modules"]
+}
+</file>
+
+<file path="src/renderer/index.ts">
+import hljs from 'highlight.js';
+import { FetchResponse } from '../shared/types';
+
+declare global {
+  interface Window {
+    electron: {
+      fetchUrl: (url: string) => Promise<FetchResponse>;
+    };
+  }
+}
+
+type DisplayFormat = 'raw' | 'json' | 'html' | 'xml';
+
+const fetchButton = document.getElementById('fetch') as HTMLButtonElement;
+const urlInput = document.getElementById('url') as HTMLInputElement;
+const resultDiv = document.getElementById('result') as HTMLDivElement;
+const formatSelect = document.getElementById('format-select') as HTMLSelectElement;
+const statusCodeSpan = document.getElementById('status-code') as HTMLSpanElement;
+
+let currentFormat: DisplayFormat = 'raw';
+let lastResponse: string = '';
+
+const getStatusText = (code: number): string => {
+  const statusTexts: Record<number, string> = {
+    200: 'OK',
+    201: 'Created',
+    204: 'No Content',
+    301: 'Moved Permanently',
+    302: 'Found',
+    304: 'Not Modified',
+    400: 'Bad Request',
+    401: 'Unauthorized',
+    403: 'Forbidden',
+    404: 'Not Found',
+    405: 'Method Not Allowed',
+    500: 'Internal Server Error',
+    502: 'Bad Gateway',
+    503: 'Service Unavailable',
+    504: 'Gateway Timeout'
+  };
+  return statusTexts[code] || 'Unknown';
+};
+
+const detectLanguage = (data: string): string => {
+  const trimmed = data.trim();
+  
+  // Check for JSON
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      JSON.parse(trimmed);
+      return 'json';
+    } catch {
+      // Not valid JSON
+    }
+  }
+  
+  // Check for XML
+  if (trimmed.startsWith('<?xml') || 
+      (trimmed.startsWith('<') && trimmed.includes('</') && trimmed.endsWith('>'))) {
+    return 'xml';
+  }
+  
+  // Check for HTML
+  if (trimmed.toLowerCase().includes('<!doctype html') || 
+      trimmed.toLowerCase().includes('<html')) {
+    return 'html';
+  }
+  
+  return 'plaintext';
+};
+
+const displayResponse = (data: string) => {
+  lastResponse = data;
+  resultDiv.innerHTML = '';
+  
+  const codeBlock = document.createElement('pre');
+  const codeElement = document.createElement('code');
+  
+  switch (currentFormat) {
+    case 'raw':
+      // Auto-detect language for syntax highlighting
+      const detectedLang = detectLanguage(data);
+      codeElement.className = `language-${detectedLang}`;
+      codeElement.textContent = data;
+      codeBlock.appendChild(codeElement);
+      resultDiv.appendChild(codeBlock);
+      hljs.highlightElement(codeElement);
+      break;
+      
+    case 'json':
+      try {
+        const parsed = JSON.parse(data);
+        const formatted = JSON.stringify(parsed, null, 2);
+        codeElement.className = 'language-json';
+        codeElement.textContent = formatted;
+        codeBlock.appendChild(codeElement);
+        resultDiv.appendChild(codeBlock);
+        hljs.highlightElement(codeElement);
+      } catch {
+        codeElement.className = 'language-plaintext';
+        codeElement.textContent = 'Invalid JSON: ' + data;
+        codeBlock.appendChild(codeElement);
+        resultDiv.appendChild(codeBlock);
+        hljs.highlightElement(codeElement);
+      }
+      break;
+      
+    case 'html':
+      codeElement.className = 'language-html';
+      codeElement.textContent = data;
+      codeBlock.appendChild(codeElement);
+      resultDiv.appendChild(codeBlock);
+      hljs.highlightElement(codeElement);
+      break;
+      
+    case 'xml':
+      codeElement.className = 'language-xml';
+      codeElement.textContent = data;
+      codeBlock.appendChild(codeElement);
+      resultDiv.appendChild(codeBlock);
+      hljs.highlightElement(codeElement);
+      break;
+  }
+};
+
+formatSelect?.addEventListener('change', () => {
+  currentFormat = formatSelect.value as DisplayFormat;
+  if (lastResponse) {
+    displayResponse(lastResponse);
+  }
+});
+
+fetchButton?.addEventListener('click', async () => {
+  try {
+    const response = await window.electron.fetchUrl(urlInput.value);
+    if (response.success && response.statusCode) {
+      const statusText = getStatusText(response.statusCode);
+      statusCodeSpan.textContent = `${response.statusCode} ${statusText}`;
+      
+      // Green for 2xx status codes, red for others
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        statusCodeSpan.className = 'text-green-400 font-semibold';
+      } else {
+        statusCodeSpan.className = 'text-red-400 font-semibold';
+      }
+      
+      displayResponse(response.data || '');
+    } else {
+      // Show error status
+      statusCodeSpan.textContent = 'Error';
+      statusCodeSpan.className = 'text-red-400 font-semibold';
+      resultDiv.textContent = `Error: ${response.error}`;
+    }
+  } catch (error) {
+    console.error(error);
+    statusCodeSpan.textContent = 'Error';
+    statusCodeSpan.className = 'text-red-400 font-semibold';
+    resultDiv.textContent = 'An error occurred';
+  }
+});
 </file>
 
 <file path="src/shared/types.ts">
@@ -264,6 +453,7 @@ export interface FetchResponse {
   success: boolean;
   data?: string;
   error?: string;
+  statusCode?: number;
 }
 
 export interface HttpResponse {
@@ -334,44 +524,6 @@ export interface IpcChannels {
 }
 </file>
 
-<file path="tsconfig.json">
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "node",
-    "resolveJsonModule": true
-  },
-  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*"],
-  "exclude": ["node_modules", "src/renderer/**/*"]
-}
-</file>
-
-<file path="tsconfig.renderer.json">
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ES2020",
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true
-  },
-  "include": ["src/renderer/**/*", "src/shared/**/*"],
-  "exclude": ["node_modules"]
-}
-</file>
-
 <file path="index.html">
 <!DOCTYPE html>
 <html>
@@ -381,16 +533,37 @@ export interface IpcChannels {
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
     />
-    <title>Req.io Electron</title>
+    <title>Req-Rep.io Electron</title>
     <link href="./styles.css" rel="stylesheet">
+    <link href="./node_modules/highlight.js/styles/atom-one-dark.css" rel="stylesheet">
   </head>
   <body class="bg-gray-900 text-white p-8">
-    <h1 class="text-3xl font-bold">Req.io</h1>
-    <input type="text" id="url" class="text-black" placeholder="Enter URL">
-    <button id="fetch">Fetch</button>
-    <div id="result"></div>
+    <h1 class="text-3xl font-bold mb-4">Req.io</h1>
+    <div class="mb-4 flex items-center gap-4">
+      <input type="text" id="url" class="text-black p-2 rounded flex-1" placeholder="Enter URL">
+      <button id="fetch" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">Fetch</button>
+    </div>
+    
+    <div class="mb-4 flex items-center justify-between">
+      <div class="flex items-center">
+        <label for="format-select" class="mr-2">Response Format:</label>
+        <select id="format-select" class="bg-gray-800 text-white p-2 rounded border border-gray-700 cursor-pointer">
+          <option value="raw">Raw</option>
+          <option value="json">JSON</option>
+          <option value="html">HTML</option>
+          <option value="xml">XML</option>
+        </select>
+      </div>
+      <div>
+        <span class="text-gray-400 mr-2">Status:</span>
+        <span id="status-code" class="text-gray-500">-</span>
+      </div>
+    </div>
+    
+    <div id="result" class="bg-[#282c34] p-4 rounded overflow-auto max-h-[600px] border border-gray-800"></div>
+    
+    <script type="module" src="./dist/renderer/index.js"></script>
   </body>
-  <script type="module" src="./dist/renderer/index.js"></script>
 </html>
 </file>
 
@@ -404,19 +577,25 @@ export interface IpcChannels {
   "type": "commonjs",
   "main": "dist/main/index.js",
   "scripts": {
-    "start": "npm run build:css && npm run build:ts && electron .",
-    "dev": "npm run watch:css & npm run watch:ts & electron .",
-    "build:css": "tailwindcss -i ./src/input.css -o ./styles.css",
-    "watch:css": "tailwindcss -i ./src/input.css -o ./styles.css --watch",
-    "build:ts": "tsc && tsc -p tsconfig.renderer.json",
-    "watch:ts": "tsc --watch & tsc -p tsconfig.renderer.json --watch",
+    "start": "npm run build:css && npm run build:ts && npm run build:renderer && electron .",
+    "dev": "npm run watch:css & npm run watch:ts & npm run watch:renderer & electron .",
+    "build:css": "tailwindcss -i ./src/styles/input.css -o ./styles.css",
+    "watch:css": "tailwindcss -i ./src/styles/input.css -o ./styles.css --watch",
+    "build:ts": "tsc",
+    "watch:ts": "tsc --watch",
+    "build:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron",
+    "watch:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "electron": "^39.2.2",
+    "esbuild": "^0.24.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "highlight.js": "^11.9.0"
   }
 }
 </file>

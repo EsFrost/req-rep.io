@@ -1,5 +1,5 @@
 import hljs from 'highlight.js';
-import { FetchResponse } from '../shared/types';
+import { FetchResponse, HttpMethod } from '../shared/types';
 
 declare global {
   interface Window {
@@ -15,10 +15,57 @@ const fetchButton = document.getElementById('fetch') as HTMLButtonElement;
 const urlInput = document.getElementById('url') as HTMLInputElement;
 const resultDiv = document.getElementById('result') as HTMLDivElement;
 const formatSelect = document.getElementById('format-select') as HTMLSelectElement;
+const methodButton = document.getElementById('method-button') as HTMLButtonElement;
+const methodText = document.getElementById('method-text') as HTMLSpanElement;
+const methodDropdown = document.getElementById('method-dropdown') as HTMLDivElement;
 const statusCodeSpan = document.getElementById('status-code') as HTMLSpanElement;
 
 let currentFormat: DisplayFormat = 'raw';
+let currentMethod: HttpMethod = 'GET';
 let lastResponse: string = '';
+
+const methodColors: Record<HttpMethod, string> = {
+  'GET': 'text-green-600',
+  'POST': 'text-yellow-600',
+  'PUT': 'text-blue-600',
+  'PATCH': 'text-pink-600',
+  'DELETE': 'text-red-600',
+  'HEAD': 'text-green-400',
+  'OPTIONS': 'text-purple-600'
+};
+
+const updateMethodButton = () => {
+  // Remove all color classes from methodText
+  Object.values(methodColors).forEach(color => {
+    methodText.classList.remove(color);
+  });
+  // Add the current method's color
+  methodText.classList.add(methodColors[currentMethod]);
+  methodText.textContent = currentMethod;
+};
+
+// Toggle dropdown
+methodButton?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  methodDropdown.classList.toggle('hidden');
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!methodDropdown.contains(e.target as Node) && e.target !== methodButton) {
+    methodDropdown.classList.add('hidden');
+  }
+});
+
+// Handle method selection
+const methodOptions = methodDropdown.querySelectorAll('[data-method]');
+methodOptions.forEach(option => {
+  option.addEventListener('click', () => {
+    currentMethod = option.getAttribute('data-method') as HttpMethod;
+    updateMethodButton();
+    methodDropdown.classList.add('hidden');
+  });
+});
 
 const getStatusText = (code: number): string => {
   const statusTexts: Record<number, string> = {

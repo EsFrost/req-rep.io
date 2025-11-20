@@ -11,8 +11,25 @@
     <link href="./node_modules/highlight.js/styles/atom-one-dark.css" rel="stylesheet">
   </head>
   <body class="bg-gray-900 text-white p-8">
-    <h1 class="text-3xl font-bold mb-4">Req.io</h1>
+    <h1 class="text-3xl font-bold mb-4">Req-Rep.io</h1>
     <div class="mb-4 flex items-center gap-4">
+      <div class="relative">
+        <button id="method-button" class="bg-gray-800 text-green-600 font-semibold px-4 py-2 rounded cursor-pointer hover:bg-gray-700 min-w-[120px] text-left flex items-center justify-between gap-3">
+          <span id="method-text">GET</span>
+          <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="#A9AEC1" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+          </svg>
+        </button>
+        <div id="method-dropdown" class="hidden absolute top-full left-0 mt-1 bg-gray-800 rounded shadow-lg border border-gray-700 min-w-[120px] z-10">
+          <div data-method="GET" class="px-4 py-2 text-green-600 hover:bg-gray-700 cursor-pointer font-semibold">GET</div>
+          <div data-method="POST" class="px-4 py-2 text-yellow-600 hover:bg-gray-700 cursor-pointer font-semibold">POST</div>
+          <div data-method="PUT" class="px-4 py-2 text-blue-600 hover:bg-gray-700 cursor-pointer font-semibold">PUT</div>
+          <div data-method="PATCH" class="px-4 py-2 text-pink-600 hover:bg-gray-700 cursor-pointer font-semibold">PATCH</div>
+          <div data-method="DELETE" class="px-4 py-2 text-red-600 hover:bg-gray-700 cursor-pointer font-semibold">DELETE</div>
+          <div data-method="HEAD" class="px-4 py-2 text-green-400 hover:bg-gray-700 cursor-pointer font-semibold">HEAD</div>
+          <div data-method="OPTIONS" class="px-4 py-2 text-purple-600 hover:bg-gray-700 cursor-pointer font-semibold">OPTIONS</div>
+        </div>
+      </div>
       <input type="text" id="url" class="text-black p-2 rounded flex-1" placeholder="Enter URL">
       <button id="fetch" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">Fetch</button>
     </div>
