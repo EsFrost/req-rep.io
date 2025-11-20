@@ -43,6 +43,7 @@ The content is organized as follows:
 .gitignore
 index.html
 package.json
+readme.md
 src/main/index.ts
 src/main/ipc/handlers.ts
 src/main/ipc/request-handler.ts
@@ -63,12 +64,446 @@ src/renderer/types/index.ts
 src/shared/types.ts
 src/styles/input.css
 tailwind.config.js
+todo.md
 tsconfig.json
 tsconfig.renderer.json
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path="src/main/ipc/request-handler.ts">
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { Request, HttpResponse, KeyValue } from '../../shared/types';
+
+const execAsync = promisify(exec);
+
+export class RequestHandler {
+  private buildCurlCommand(request: Request): string {
+    let command = 'curl -i -s';
+    
+    // Add method
+    if (request.method !== 'GET') {
+      command += ` -X ${request.method}`;
+    }
+    
+    // Add headers
+    if (request.headers && request.headers.length > 0) {
+      request.headers
+        .filter(h => h.enabled && h.key && h.value)
+        .forEach(header => {
+          command += ` -H "${header.key}: ${this.escapeValue(header.value)}"`;
+        });
+    }
+    
+    // Add auth
+    if (request.auth && request.auth.type !== 'none') {
+      switch (request.auth.type) {
+        case 'basic':
+          if (request.auth.basic && request.auth.basic.username && request.auth.basic.password) {
+            command += ` -u "${this.escapeValue(request.auth.basic.username)}:${this.escapeValue(request.auth.basic.password)}"`;
+          }
+          break;
+        case 'bearer':
+          if (request.auth.bearer && request.auth.bearer.token) {
+            command += ` -H "Authorization: Bearer ${this.escapeValue(request.auth.bearer.token)}"`;
+          }
+          break;
+        case 'api-key':
+          if (request.auth.apiKey && request.auth.apiKey.key && request.auth.apiKey.value) {
+            if (request.auth.apiKey.addTo === 'header') {
+              command += ` -H "${this.escapeValue(request.auth.apiKey.key)}: ${this.escapeValue(request.auth.apiKey.value)}"`;
+            }
+          }
+          break;
+      }
+    }
+    
+    // Build URL with query params
+    let url = request.url;
+    const enabledParams = request.queryParams?.filter(p => p.enabled && p.key) || [];
+    if (enabledParams.length > 0) {
+      const queryString = enabledParams
+        .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+        .join('&');
+      url += (url.includes('?') ? '&' : '?') + queryString;
+    }
+    
+    // Add API key to query if needed
+    if (request.auth?.type === 'api-key' && 
+        request.auth.apiKey?.addTo === 'query' && 
+        request.auth.apiKey.key && 
+        request.auth.apiKey.value) {
+      const separator = url.includes('?') ? '&' : '?';
+      url += `${separator}${encodeURIComponent(request.auth.apiKey.key)}=${encodeURIComponent(request.auth.apiKey.value)}`;
+    }
+    
+    // Add body
+    if (request.body && request.body.type !== 'none') {
+      switch (request.body.type) {
+        case 'json':
+          if (request.body.json) {
+            const jsonStr = typeof request.body.json === 'string' 
+              ? request.body.json 
+              : JSON.stringify(request.body.json);
+            if (jsonStr.trim()) {
+              command += ` -H "Content-Type: application/json"`;
+              command += ` -d '${this.escapeValue(jsonStr)}'`;
+            }
+          }
+          break;
+        case 'raw':
+          if (request.body.raw && request.body.raw.trim()) {
+            command += ` -d '${this.escapeValue(request.body.raw)}'`;
+          }
+          break;
+        case 'x-www-form-urlencoded':
+          if (request.body.formData && request.body.formData.length > 0) {
+            command += ` -H "Content-Type: application/x-www-form-urlencoded"`;
+            const formStr = request.body.formData
+              .filter(f => f.enabled && f.key)
+              .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value || '')}`)
+              .join('&');
+            if (formStr) {
+              command += ` -d '${formStr}'`;
+            }
+          }
+          break;
+        case 'form-data':
+          if (request.body.formData && request.body.formData.length > 0) {
+            request.body.formData
+              .filter(f => f.enabled && f.key)
+              .forEach(field => {
+                command += ` -F "${this.escapeValue(field.key)}=${this.escapeValue(field.value || '')}"`;
+              });
+          }
+          break;
+      }
+    }
+    
+    // Add timing and size info, and include response even on error
+    command += ` -w "\\n__CURL_TIME__%{time_total}\\n__CURL_SIZE__%{size_download}\\n__CURL_HTTP_CODE__%{http_code}"`;
+    
+    // Show errors but don't fail
+    command += ` --fail-with-body`;
+    
+    command += ` "${url}"`;
+    
+    return command;
+  }
+  
+  private escapeValue(value: string): string {
+    return value.replace(/'/g, "'\\''");
+  }
+  
+  private parseHeaders(headerText: string): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const lines = headerText.split('\n');
+    
+    for (const line of lines) {
+      const match = line.match(/^([^:]+):\s*(.+)$/);
+      if (match) {
+        headers[match[1].toLowerCase()] = match[2].trim();
+      }
+    }
+    
+    return headers;
+  }
+  
+  async execute(request: Request): Promise<HttpResponse> {
+    const startTime = Date.now();
+    
+    try {
+      const command = this.buildCurlCommand(request);
+      console.log('Executing command:', command);
+      
+      let stdout = '';
+      let stderr = '';
+      
+      try {
+        const result = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 }); // 10MB buffer
+        stdout = result.stdout;
+        stderr = result.stderr;
+      } catch (error: any) {
+        // Curl returns non-zero exit code for HTTP errors, but we still get output
+        stdout = error.stdout || '';
+        stderr = error.stderr || '';
+        
+        // If there's no stdout at all, it's a real error (connection failed, etc.)
+        if (!stdout) {
+          // Check for common connection errors
+          if (stderr.includes('Could not resolve host')) {
+            throw new Error('Could not resolve host. Check the URL.');
+          } else if (stderr.includes('Failed to connect')) {
+            throw new Error('Connection failed. Is the server running?');
+          } else if (stderr.includes('Connection refused')) {
+            throw new Error('Connection refused. Is the server running on this port?');
+          } else if (stderr.includes('Timeout')) {
+            throw new Error('Request timed out.');
+          } else {
+            throw new Error(stderr || error.message || 'Request failed');
+          }
+        }
+      }
+      
+      // If we still have no output, throw error
+      if (!stdout) {
+        throw new Error('No response received from server');
+      }
+      
+      // Parse response
+      const parts = stdout.split('\n\n');
+      let headerSection = parts[0];
+      let bodyParts = parts.slice(1);
+      
+      // Handle multiple HTTP responses (redirects, etc.)
+      const statusLines = headerSection.split('\n').filter(line => line.startsWith('HTTP/'));
+      if (statusLines.length > 1) {
+        const lastStatusIndex = headerSection.lastIndexOf('HTTP/');
+        headerSection = headerSection.substring(lastStatusIndex);
+      }
+      
+      // Extract timing info
+      const timeMatch = stdout.match(/__CURL_TIME__([0-9.]+)/);
+      const sizeMatch = stdout.match(/__CURL_SIZE__([0-9]+)/);
+      const httpCodeMatch = stdout.match(/__CURL_HTTP_CODE__([0-9]+)/);
+      
+      // Remove curl metadata from body
+      let body = bodyParts.join('\n\n');
+      body = body.replace(/__CURL_TIME__[0-9.]+\n?/g, '');
+      body = body.replace(/__CURL_SIZE__[0-9]+\n?/g, '');
+      body = body.replace(/__CURL_HTTP_CODE__[0-9]+\n?/g, '');
+      body = body.trim();
+      
+      // Parse status line
+      const statusLine = headerSection.split('\n')[0];
+      const statusMatch = statusLine.match(/HTTP\/[\d.]+ (\d+) (.+)/);
+      
+      // Use curl's http_code if available, otherwise parse from headers
+      let status = httpCodeMatch ? parseInt(httpCodeMatch[1]) : 0;
+      if (!status && statusMatch) {
+        status = parseInt(statusMatch[1]);
+      }
+      
+      const statusText = statusMatch ? statusMatch[2].trim() : 'Unknown';
+      
+      // Parse headers
+      const headers = this.parseHeaders(headerSection);
+      
+      const time = timeMatch ? parseFloat(timeMatch[1]) * 1000 : Date.now() - startTime;
+      const size = sizeMatch ? parseInt(sizeMatch[1]) : body.length;
+      
+      return {
+        status: status || 0,
+        statusText: statusText || 'No Response',
+        headers,
+        body: body || 'No response body',
+        time,
+        size,
+        timestamp: Date.now()
+      };
+    } catch (error) {
+      // Return a proper error response
+      return {
+        status: 0,
+        statusText: 'Error',
+        headers: {},
+        body: (error as Error).message,
+        time: Date.now() - startTime,
+        size: 0,
+        timestamp: Date.now()
+      };
+    }
+  }
+}
+</file>
+
+<file path="src/main/storage/collections.ts">
+import { app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Collection } from '../../shared/types';
+
+export class CollectionStorage {
+  private storagePath: string;
+  
+  constructor() {
+    const userDataPath = app.getPath('userData');
+    this.storagePath = path.join(userDataPath, 'collections.json');
+    this.ensureStorageFile();
+  }
+  
+  private ensureStorageFile(): void {
+    if (!fs.existsSync(this.storagePath)) {
+      fs.writeFileSync(this.storagePath, JSON.stringify([]));
+    }
+  }
+  
+  loadAll(): Collection[] {
+    try {
+      const data = fs.readFileSync(this.storagePath, 'utf-8');
+      return JSON.parse(data);
+    } catch {
+      return [];
+    }
+  }
+  
+  save(collection: Collection): void {
+    const collections = this.loadAll();
+    const index = collections.findIndex(c => c.id === collection.id);
+    
+    if (index >= 0) {
+      collections[index] = { ...collection, updatedAt: Date.now() };
+    } else {
+      collections.push(collection);
+    }
+    
+    fs.writeFileSync(this.storagePath, JSON.stringify(collections, null, 2));
+  }
+  
+  delete(id: string): void {
+    const collections = this.loadAll().filter(c => c.id !== id);
+    fs.writeFileSync(this.storagePath, JSON.stringify(collections, null, 2));
+  }
+}
+</file>
+
+<file path="src/main/storage/environments.ts">
+import { app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Environment } from '../../shared/types';
+
+export class EnvironmentStorage {
+  private storagePath: string;
+  
+  constructor() {
+    const userDataPath = app.getPath('userData');
+    this.storagePath = path.join(userDataPath, 'environments.json');
+    this.ensureStorageFile();
+  }
+  
+  private ensureStorageFile(): void {
+    if (!fs.existsSync(this.storagePath)) {
+      fs.writeFileSync(this.storagePath, JSON.stringify([]));
+    }
+  }
+  
+  loadAll(): Environment[] {
+    try {
+      const data = fs.readFileSync(this.storagePath, 'utf-8');
+      return JSON.parse(data);
+    } catch {
+      return [];
+    }
+  }
+  
+  save(environment: Environment): void {
+    const environments = this.loadAll();
+    const index = environments.findIndex(e => e.id === environment.id);
+    
+    if (index >= 0) {
+      environments[index] = environment;
+    } else {
+      environments.push(environment);
+    }
+    
+    fs.writeFileSync(this.storagePath, JSON.stringify(environments, null, 2));
+  }
+  
+  delete(id: string): void {
+    const environments = this.loadAll().filter(e => e.id !== id);
+    fs.writeFileSync(this.storagePath, JSON.stringify(environments, null, 2));
+  }
+  
+  setActive(id: string): void {
+    const environments = this.loadAll();
+    environments.forEach(e => {
+      e.isActive = e.id === id;
+    });
+    fs.writeFileSync(this.storagePath, JSON.stringify(environments, null, 2));
+  }
+}
+</file>
+
+<file path="src/main/storage/history.ts">
+import { app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import { HistoryEntry } from '../../shared/types';
+
+export class HistoryStorage {
+  private storagePath: string;
+  private maxEntries = 100;
+  
+  constructor() {
+    const userDataPath = app.getPath('userData');
+    this.storagePath = path.join(userDataPath, 'history.json');
+    this.ensureStorageFile();
+  }
+  
+  private ensureStorageFile(): void {
+    if (!fs.existsSync(this.storagePath)) {
+      fs.writeFileSync(this.storagePath, JSON.stringify([]));
+    }
+  }
+  
+  get(limit?: number): HistoryEntry[] {
+    try {
+      const data = fs.readFileSync(this.storagePath, 'utf-8');
+      const history = JSON.parse(data);
+      return limit ? history.slice(0, limit) : history;
+    } catch {
+      return [];
+    }
+  }
+  
+  add(entry: HistoryEntry): void {
+    const history = this.get();
+    history.unshift(entry);
+    
+    // Keep only the most recent entries
+    const trimmed = history.slice(0, this.maxEntries);
+    
+    fs.writeFileSync(this.storagePath, JSON.stringify(trimmed, null, 2));
+  }
+  
+  clear(): void {
+    fs.writeFileSync(this.storagePath, JSON.stringify([]));
+  }
+}
+</file>
+
+<file path="todo.md">
+# TODO
+
+## readme.md :
+
+- Explain why someone would use this over Postman
+- Explain why someone would use this over curl
+
+## functionality :
+
+- Add support for methods
+- Add support for headers
+- Add support for body
+- Add support for cookies
+- Add support for authentication
+- Add support for saving requests
+- Add support for loading requests
+- Add support for history
+- Add support for ogranizing folders / projects
+- Include any missing functionality from apps like postman
+
+## UI :
+
+- Add dark mode
+- Add light mode
+- Add system mode
+- Fix any missing UI elements
+- Fix any UI elements that are not working / bugging
+</file>
 
 <file path="src/main/index.ts">
 import { app, BrowserWindow } from 'electron';
@@ -116,10 +551,36 @@ export const createWindow = (): BrowserWindow => {
 
 <file path="src/preload/index.ts">
 import { contextBridge, ipcRenderer } from 'electron';
-import { FetchResponse } from '../shared/types';
+import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../shared/types';
 
 contextBridge.exposeInMainWorld('electron', {
-  fetchUrl: (url: string): Promise<FetchResponse> => ipcRenderer.invoke('fetch-url', url),
+  // Request
+  sendRequest: (request: Request): Promise<HttpResponse> => 
+    ipcRenderer.invoke('request:send', request),
+  
+  // Collections
+  saveCollection: (collection: Collection): Promise<void> => 
+    ipcRenderer.invoke('collection:save', collection),
+  loadCollections: (): Promise<Collection[]> => 
+    ipcRenderer.invoke('collection:load'),
+  deleteCollection: (id: string): Promise<void> => 
+    ipcRenderer.invoke('collection:delete', id),
+  
+  // Environments
+  saveEnvironment: (environment: Environment): Promise<void> => 
+    ipcRenderer.invoke('environment:save', environment),
+  loadEnvironments: (): Promise<Environment[]> => 
+    ipcRenderer.invoke('environment:load'),
+  deleteEnvironment: (id: string): Promise<void> => 
+    ipcRenderer.invoke('environment:delete', id),
+  setActiveEnvironment: (id: string): Promise<void> => 
+    ipcRenderer.invoke('environment:setActive', id),
+  
+  // History
+  getHistory: (limit?: number): Promise<HistoryEntry[]> => 
+    ipcRenderer.invoke('history:get', limit),
+  clearHistory: (): Promise<void> => 
+    ipcRenderer.invoke('history:clear'),
 });
 </file>
 
@@ -143,37 +604,88 @@ styles.css
 dist
 </file>
 
+<file path="readme.md">
+# Req-Rep.io
+
+## Req-Rep.io is a simple HTTP client for Windows, Linux and macOS.
+
+It is created using the Electron framework (there are size and performance issues). The reason I chose electron over a more robust solution is that I have worked with ts and electron before and it is faster, easier and more pleasant to develop with.
+
+---
+
+If the final project's size is too large, please download the source code and build it yourself.
+
+Any and all suggestions are welcome.
+</file>
+
 <file path="src/main/ipc/handlers.ts">
 import { ipcMain } from 'electron';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import { FetchResponse } from '../../shared/types';
+import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../../shared/types';
+import { RequestHandler } from './request-handler';
+import { CollectionStorage } from '../storage/collections';
+import { EnvironmentStorage } from '../storage/environments';
+import { HistoryStorage } from '../storage/history';
 
-const execAsync = promisify(exec);
+const requestHandler = new RequestHandler();
+const collectionStorage = new CollectionStorage();
+const environmentStorage = new EnvironmentStorage();
+const historyStorage = new HistoryStorage();
 
 export const registerHandlers = (): void => {
-  ipcMain.handle('fetch-url', async (_event, url: string): Promise<FetchResponse> => {
-    try {
-      // Use curl with -w flag to get HTTP status code
-      const { stdout, stderr } = await execAsync(`curl -s -w "\\n%{http_code}" "${url}"`);
-      
-      if (stderr) {
-        return { success: false, error: stderr };
-      }
-      
-      // Split response body and status code
-      const lines = stdout.trim().split('\n');
-      const statusCode = parseInt(lines[lines.length - 1]);
-      const body = lines.slice(0, -1).join('\n');
-      
-      return { 
-        success: true, 
-        data: body,
-        statusCode: statusCode
-      };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
+  // Send HTTP request
+  ipcMain.handle('request:send', async (_event, request: Request): Promise<HttpResponse> => {
+    const response = await requestHandler.execute(request);
+    
+    // Only save to history if we got a real response (not an error)
+    if (response.status > 0) {
+      historyStorage.add({
+        id: Date.now().toString(),
+        request,
+        response,
+        timestamp: Date.now()
+      });
     }
+    
+    return response;
+  });
+  
+  // Collection management
+  ipcMain.handle('collection:save', async (_event, collection: Collection): Promise<void> => {
+    collectionStorage.save(collection);
+  });
+  
+  ipcMain.handle('collection:load', async (): Promise<Collection[]> => {
+    return collectionStorage.loadAll();
+  });
+  
+  ipcMain.handle('collection:delete', async (_event, id: string): Promise<void> => {
+    collectionStorage.delete(id);
+  });
+  
+  // Environment management
+  ipcMain.handle('environment:save', async (_event, environment: Environment): Promise<void> => {
+    environmentStorage.save(environment);
+  });
+  
+  ipcMain.handle('environment:load', async (): Promise<Environment[]> => {
+    return environmentStorage.loadAll();
+  });
+  
+  ipcMain.handle('environment:delete', async (_event, id: string): Promise<void> => {
+    environmentStorage.delete(id);
+  });
+  
+  ipcMain.handle('environment:setActive', async (_event, id: string): Promise<void> => {
+    environmentStorage.setActive(id);
+  });
+  
+  // History management
+  ipcMain.handle('history:get', async (_event, limit?: number): Promise<HistoryEntry[]> => {
+    return historyStorage.get(limit);
+  });
+  
+  ipcMain.handle('history:clear', async (): Promise<void> => {
+    historyStorage.clear();
   });
 };
 </file>
@@ -232,170 +744,6 @@ export const registerHandlers = (): void => {
   "include": ["src/renderer/**/*", "src/shared/**/*"],
   "exclude": ["node_modules"]
 }
-</file>
-
-<file path="src/renderer/index.ts">
-import hljs from 'highlight.js';
-import { FetchResponse } from '../shared/types';
-
-declare global {
-  interface Window {
-    electron: {
-      fetchUrl: (url: string) => Promise<FetchResponse>;
-    };
-  }
-}
-
-type DisplayFormat = 'raw' | 'json' | 'html' | 'xml';
-
-const fetchButton = document.getElementById('fetch') as HTMLButtonElement;
-const urlInput = document.getElementById('url') as HTMLInputElement;
-const resultDiv = document.getElementById('result') as HTMLDivElement;
-const formatSelect = document.getElementById('format-select') as HTMLSelectElement;
-const statusCodeSpan = document.getElementById('status-code') as HTMLSpanElement;
-
-let currentFormat: DisplayFormat = 'raw';
-let lastResponse: string = '';
-
-const getStatusText = (code: number): string => {
-  const statusTexts: Record<number, string> = {
-    200: 'OK',
-    201: 'Created',
-    204: 'No Content',
-    301: 'Moved Permanently',
-    302: 'Found',
-    304: 'Not Modified',
-    400: 'Bad Request',
-    401: 'Unauthorized',
-    403: 'Forbidden',
-    404: 'Not Found',
-    405: 'Method Not Allowed',
-    500: 'Internal Server Error',
-    502: 'Bad Gateway',
-    503: 'Service Unavailable',
-    504: 'Gateway Timeout'
-  };
-  return statusTexts[code] || 'Unknown';
-};
-
-const detectLanguage = (data: string): string => {
-  const trimmed = data.trim();
-  
-  // Check for JSON
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
-      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-    try {
-      JSON.parse(trimmed);
-      return 'json';
-    } catch {
-      // Not valid JSON
-    }
-  }
-  
-  // Check for XML
-  if (trimmed.startsWith('<?xml') || 
-      (trimmed.startsWith('<') && trimmed.includes('</') && trimmed.endsWith('>'))) {
-    return 'xml';
-  }
-  
-  // Check for HTML
-  if (trimmed.toLowerCase().includes('<!doctype html') || 
-      trimmed.toLowerCase().includes('<html')) {
-    return 'html';
-  }
-  
-  return 'plaintext';
-};
-
-const displayResponse = (data: string) => {
-  lastResponse = data;
-  resultDiv.innerHTML = '';
-  
-  const codeBlock = document.createElement('pre');
-  const codeElement = document.createElement('code');
-  
-  switch (currentFormat) {
-    case 'raw':
-      // Auto-detect language for syntax highlighting
-      const detectedLang = detectLanguage(data);
-      codeElement.className = `language-${detectedLang}`;
-      codeElement.textContent = data;
-      codeBlock.appendChild(codeElement);
-      resultDiv.appendChild(codeBlock);
-      hljs.highlightElement(codeElement);
-      break;
-      
-    case 'json':
-      try {
-        const parsed = JSON.parse(data);
-        const formatted = JSON.stringify(parsed, null, 2);
-        codeElement.className = 'language-json';
-        codeElement.textContent = formatted;
-        codeBlock.appendChild(codeElement);
-        resultDiv.appendChild(codeBlock);
-        hljs.highlightElement(codeElement);
-      } catch {
-        codeElement.className = 'language-plaintext';
-        codeElement.textContent = 'Invalid JSON: ' + data;
-        codeBlock.appendChild(codeElement);
-        resultDiv.appendChild(codeBlock);
-        hljs.highlightElement(codeElement);
-      }
-      break;
-      
-    case 'html':
-      codeElement.className = 'language-html';
-      codeElement.textContent = data;
-      codeBlock.appendChild(codeElement);
-      resultDiv.appendChild(codeBlock);
-      hljs.highlightElement(codeElement);
-      break;
-      
-    case 'xml':
-      codeElement.className = 'language-xml';
-      codeElement.textContent = data;
-      codeBlock.appendChild(codeElement);
-      resultDiv.appendChild(codeBlock);
-      hljs.highlightElement(codeElement);
-      break;
-  }
-};
-
-formatSelect?.addEventListener('change', () => {
-  currentFormat = formatSelect.value as DisplayFormat;
-  if (lastResponse) {
-    displayResponse(lastResponse);
-  }
-});
-
-fetchButton?.addEventListener('click', async () => {
-  try {
-    const response = await window.electron.fetchUrl(urlInput.value);
-    if (response.success && response.statusCode) {
-      const statusText = getStatusText(response.statusCode);
-      statusCodeSpan.textContent = `${response.statusCode} ${statusText}`;
-      
-      // Green for 2xx status codes, red for others
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        statusCodeSpan.className = 'text-green-400 font-semibold';
-      } else {
-        statusCodeSpan.className = 'text-red-400 font-semibold';
-      }
-      
-      displayResponse(response.data || '');
-    } else {
-      // Show error status
-      statusCodeSpan.textContent = 'Error';
-      statusCodeSpan.className = 'text-red-400 font-semibold';
-      resultDiv.textContent = `Error: ${response.error}`;
-    }
-  } catch (error) {
-    console.error(error);
-    statusCodeSpan.textContent = 'Error';
-    statusCodeSpan.className = 'text-red-400 font-semibold';
-    resultDiv.textContent = 'An error occurred';
-  }
-});
 </file>
 
 <file path="src/shared/types.ts">
@@ -524,47 +872,603 @@ export interface IpcChannels {
 }
 </file>
 
-<file path="index.html">
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
-    />
-    <title>Req-Rep.io Electron</title>
-    <link href="./styles.css" rel="stylesheet">
-    <link href="./node_modules/highlight.js/styles/atom-one-dark.css" rel="stylesheet">
-  </head>
-  <body class="bg-gray-900 text-white p-8">
-    <h1 class="text-3xl font-bold mb-4">Req.io</h1>
-    <div class="mb-4 flex items-center gap-4">
-      <input type="text" id="url" class="text-black p-2 rounded flex-1" placeholder="Enter URL">
-      <button id="fetch" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">Fetch</button>
-    </div>
+<file path="src/renderer/index.ts">
+import hljs from 'highlight.js';
+import { Request, HttpResponse, HttpMethod, KeyValue, Collection, Environment, BodyType, AuthType } from '../shared/types';
+
+declare global {
+  interface Window {
+    electron: {
+      sendRequest: (request: Request) => Promise<HttpResponse>;
+      saveCollection: (collection: Collection) => Promise<void>;
+      loadCollections: () => Promise<Collection[]>;
+      deleteCollection: (id: string) => Promise<void>;
+      saveEnvironment: (environment: Environment) => Promise<void>;
+      loadEnvironments: () => Promise<Environment[]>;
+      deleteEnvironment: (id: string) => Promise<void>;
+      setActiveEnvironment: (id: string) => Promise<void>;
+      getHistory: (limit?: number) => Promise<any[]>;
+      clearHistory: () => Promise<void>;
+    };
+  }
+}
+
+type DisplayFormat = 'raw' | 'json' | 'html' | 'xml';
+type TabType = 'params' | 'headers' | 'body' | 'auth';
+
+// UI Elements
+const fetchButton = document.getElementById('fetch') as HTMLButtonElement;
+const urlInput = document.getElementById('url') as HTMLInputElement;
+const resultDiv = document.getElementById('result') as HTMLDivElement;
+const formatSelect = document.getElementById('format-select') as HTMLSelectElement;
+const methodButton = document.getElementById('method-button') as HTMLButtonElement;
+const methodText = document.getElementById('method-text') as HTMLSpanElement;
+const methodDropdown = document.getElementById('method-dropdown') as HTMLDivElement;
+const statusCodeSpan = document.getElementById('status-code') as HTMLSpanElement;
+const responseTimeSpan = document.getElementById('response-time') as HTMLSpanElement;
+const responseSizeSpan = document.getElementById('response-size') as HTMLSpanElement;
+
+const paramsTab = document.getElementById('params-tab') as HTMLButtonElement;
+const headersTab = document.getElementById('headers-tab') as HTMLButtonElement;
+const bodyTab = document.getElementById('body-tab') as HTMLButtonElement;
+const authTab = document.getElementById('auth-tab') as HTMLButtonElement;
+
+const paramsPanel = document.getElementById('params-panel') as HTMLDivElement;
+const headersPanel = document.getElementById('headers-panel') as HTMLDivElement;
+const bodyPanel = document.getElementById('body-panel') as HTMLDivElement;
+const authPanel = document.getElementById('auth-panel') as HTMLDivElement;
+
+const paramsContainer = document.getElementById('params-container') as HTMLDivElement;
+const headersContainer = document.getElementById('headers-container') as HTMLDivElement;
+const addParamBtn = document.getElementById('add-param') as HTMLButtonElement;
+const addHeaderBtn = document.getElementById('add-header') as HTMLButtonElement;
+
+const bodyTypeSelect = document.getElementById('body-type') as HTMLSelectElement;
+const bodyRawContainer = document.getElementById('body-raw-container') as HTMLDivElement;
+const bodyFormContainer = document.getElementById('body-form-container') as HTMLDivElement;
+const bodyJsonContainer = document.getElementById('body-json-container') as HTMLDivElement;
+const bodyRawTextarea = document.getElementById('body-raw') as HTMLTextAreaElement;
+const bodyJsonTextarea = document.getElementById('body-json') as HTMLTextAreaElement;
+const bodyFormDataContainer = document.getElementById('body-formdata-container') as HTMLDivElement;
+const addFormFieldBtn = document.getElementById('add-form-field') as HTMLButtonElement;
+
+const authTypeSelect = document.getElementById('auth-type') as HTMLSelectElement;
+const authNonePanel = document.getElementById('auth-none') as HTMLDivElement;
+const authBasicPanel = document.getElementById('auth-basic') as HTMLDivElement;
+const authBearerPanel = document.getElementById('auth-bearer') as HTMLDivElement;
+const authApiKeyPanel = document.getElementById('auth-apikey') as HTMLDivElement;
+
+const saveRequestBtn = document.getElementById('save-request') as HTMLButtonElement;
+const viewHistoryBtn = document.getElementById('view-history') as HTMLButtonElement;
+const historyModal = document.getElementById('history-modal') as HTMLDivElement;
+const historyContainer = document.getElementById('history-container') as HTMLDivElement;
+const closeHistoryBtn = document.getElementById('close-history') as HTMLButtonElement;
+
+// State
+let currentFormat: DisplayFormat = 'raw';
+let currentMethod: HttpMethod = 'GET';
+let lastResponse: HttpResponse | null = null;
+let currentTab: TabType = 'params';
+let queryParams: KeyValue[] = [];
+let headers: KeyValue[] = [];
+let formFields: KeyValue[] = [];
+
+const methodColors: Record<HttpMethod, string> = {
+  'GET': 'text-green-600',
+  'POST': 'text-yellow-600',
+  'PUT': 'text-blue-600',
+  'PATCH': 'text-pink-600',
+  'DELETE': 'text-red-600',
+  'HEAD': 'text-green-400',
+  'OPTIONS': 'text-purple-600'
+};
+
+// Tab Management
+function switchTab(tab: TabType) {
+  currentTab = tab;
+  
+  [paramsTab, headersTab, bodyTab, authTab].forEach(t => {
+    t.classList.remove('border-blue-500', 'text-blue-500');
+    t.classList.add('border-transparent', 'text-gray-400');
+  });
+  
+  [paramsPanel, headersPanel, bodyPanel, authPanel].forEach(p => p.classList.add('hidden'));
+  
+  switch (tab) {
+    case 'params':
+      paramsTab.classList.add('border-blue-500', 'text-blue-500');
+      paramsTab.classList.remove('text-gray-400');
+      paramsPanel.classList.remove('hidden');
+      break;
+    case 'headers':
+      headersTab.classList.add('border-blue-500', 'text-blue-500');
+      headersTab.classList.remove('text-gray-400');
+      headersPanel.classList.remove('hidden');
+      break;
+    case 'body':
+      bodyTab.classList.add('border-blue-500', 'text-blue-500');
+      bodyTab.classList.remove('text-gray-400');
+      bodyPanel.classList.remove('hidden');
+      break;
+    case 'auth':
+      authTab.classList.add('border-blue-500', 'text-blue-500');
+      authTab.classList.remove('text-gray-400');
+      authPanel.classList.remove('hidden');
+      break;
+  }
+}
+
+paramsTab?.addEventListener('click', () => switchTab('params'));
+headersTab?.addEventListener('click', () => switchTab('headers'));
+bodyTab?.addEventListener('click', () => switchTab('body'));
+authTab?.addEventListener('click', () => switchTab('auth'));
+
+// Method Management
+const updateMethodButton = () => {
+  Object.values(methodColors).forEach(color => methodText.classList.remove(color));
+  methodText.classList.add(methodColors[currentMethod]);
+  methodText.textContent = currentMethod;
+};
+
+methodButton?.addEventListener('click', (e) => {
+  e.stopPropagation();
+  methodDropdown.classList.toggle('hidden');
+});
+
+document.addEventListener('click', (e) => {
+  if (!methodDropdown.contains(e.target as Node) && e.target !== methodButton) {
+    methodDropdown.classList.add('hidden');
+  }
+});
+
+const methodOptions = methodDropdown.querySelectorAll('[data-method]');
+methodOptions.forEach(option => {
+  option.addEventListener('click', () => {
+    const method = option.getAttribute('data-method');
+    if (method && isHttpMethod(method)) {
+      currentMethod = method;
+      updateMethodButton();
+      methodDropdown.classList.add('hidden');
+    }
+  });
+});
+
+function isHttpMethod(method: string): method is HttpMethod {
+  return ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method);
+}
+
+// Key-Value Pair Management
+function createKeyValueRow(
+  key: string = '',
+  value: string = '',
+  enabled: boolean = true,
+  onDelete: () => void
+): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'flex gap-2 items-center mb-2';
+  
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = enabled;
+  checkbox.className = 'w-5 h-5';
+  
+  const keyInput = document.createElement('input');
+  keyInput.type = 'text';
+  keyInput.value = key;
+  keyInput.placeholder = 'Key';
+  keyInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
+  
+  const valueInput = document.createElement('input');
+  valueInput.type = 'text';
+  valueInput.value = value;
+  valueInput.placeholder = 'Value';
+  valueInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '×';
+  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-xl font-bold';
+  deleteBtn.onclick = onDelete;
+  
+  row.appendChild(checkbox);
+  row.appendChild(keyInput);
+  row.appendChild(valueInput);
+  row.appendChild(deleteBtn);
+  
+  return row;
+}
+
+function addParam() {
+  const index = queryParams.length;
+  queryParams.push({ key: '', value: '', enabled: true });
+  
+  const row = createKeyValueRow('', '', true, () => {
+    queryParams.splice(index, 1);
+    renderParams();
+  });
+  
+  paramsContainer.appendChild(row);
+}
+
+function renderParams() {
+  paramsContainer.innerHTML = '';
+  queryParams.forEach((param, index) => {
+    const row = createKeyValueRow(param.key, param.value, param.enabled, () => {
+      queryParams.splice(index, 1);
+      renderParams();
+    });
+    paramsContainer.appendChild(row);
+  });
+}
+
+function addHeader() {
+  const index = headers.length;
+  headers.push({ key: '', value: '', enabled: true });
+  
+  const row = createKeyValueRow('', '', true, () => {
+    headers.splice(index, 1);
+    renderHeaders();
+  });
+  
+  headersContainer.appendChild(row);
+}
+
+function renderHeaders() {
+  headersContainer.innerHTML = '';
+  headers.forEach((header, index) => {
+    const row = createKeyValueRow(header.key, header.value, header.enabled, () => {
+      headers.splice(index, 1);
+      renderHeaders();
+    });
+    headersContainer.appendChild(row);
+  });
+}
+
+function addFormField() {
+  const index = formFields.length;
+  formFields.push({ key: '', value: '', enabled: true });
+  
+  const row = createKeyValueRow('', '', true, () => {
+    formFields.splice(index, 1);
+    renderFormFields();
+  });
+  
+  bodyFormDataContainer.appendChild(row);
+}
+
+function renderFormFields() {
+  bodyFormDataContainer.innerHTML = '';
+  formFields.forEach((field, index) => {
+    const row = createKeyValueRow(field.key, field.value, field.enabled, () => {
+      formFields.splice(index, 1);
+      renderFormFields();
+    });
+    bodyFormDataContainer.appendChild(row);
+  });
+}
+
+addParamBtn?.addEventListener('click', addParam);
+addHeaderBtn?.addEventListener('click', addHeader);
+addFormFieldBtn?.addEventListener('click', addFormField);
+
+// Body Type Management
+bodyTypeSelect?.addEventListener('change', () => {
+  const type = bodyTypeSelect.value;
+  
+  [bodyRawContainer, bodyFormContainer, bodyJsonContainer].forEach(c => c.classList.add('hidden'));
+  
+  switch (type) {
+    case 'raw':
+    case 'x-www-form-urlencoded':
+      bodyRawContainer.classList.remove('hidden');
+      break;
+    case 'json':
+      bodyJsonContainer.classList.remove('hidden');
+      break;
+    case 'form-data':
+      bodyFormContainer.classList.remove('hidden');
+      break;
+  }
+});
+
+// Auth Type Management
+authTypeSelect?.addEventListener('change', () => {
+  const type = authTypeSelect.value;
+  
+  [authNonePanel, authBasicPanel, authBearerPanel, authApiKeyPanel].forEach(p => p.classList.add('hidden'));
+  
+  switch (type) {
+    case 'none':
+      authNonePanel.classList.remove('hidden');
+      break;
+    case 'basic':
+      authBasicPanel.classList.remove('hidden');
+      break;
+    case 'bearer':
+      authBearerPanel.classList.remove('hidden');
+      break;
+    case 'api-key':
+      authApiKeyPanel.classList.remove('hidden');
+      break;
+  }
+});
+
+// Response Display
+const getStatusText = (code: number): string => {
+  const statusTexts: Record<number, string> = {
+    200: 'OK', 201: 'Created', 204: 'No Content',
+    301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
+    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+    404: 'Not Found', 405: 'Method Not Allowed',
+    500: 'Internal Server Error', 502: 'Bad Gateway',
+    503: 'Service Unavailable', 504: 'Gateway Timeout'
+  };
+  return statusTexts[code] || 'Unknown';
+};
+
+const detectLanguage = (data: string): string => {
+  const trimmed = data.trim();
+  
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      JSON.parse(trimmed);
+      return 'json';
+    } catch {}
+  }
+  
+  if (trimmed.startsWith('<?xml') || 
+      (trimmed.startsWith('<') && trimmed.includes('</') && trimmed.endsWith('>'))) {
+    return 'xml';
+  }
+  
+  if (trimmed.toLowerCase().includes('<!doctype html') || 
+      trimmed.toLowerCase().includes('<html')) {
+    return 'html';
+  }
+  
+  return 'plaintext';
+};
+
+const displayResponse = (response: HttpResponse) => {
+  lastResponse = response;
+  resultDiv.innerHTML = '';
+  
+  const codeBlock = document.createElement('pre');
+  const codeElement = document.createElement('code');
+  const data = response.body;
+  
+  switch (currentFormat) {
+    case 'raw':
+      const detectedLang = detectLanguage(data);
+      codeElement.className = `language-${detectedLang}`;
+      codeElement.textContent = data;
+      break;
+      
+    case 'json':
+      try {
+        const parsed = JSON.parse(data);
+        const formatted = JSON.stringify(parsed, null, 2);
+        codeElement.className = 'language-json';
+        codeElement.textContent = formatted;
+      } catch {
+        codeElement.className = 'language-plaintext';
+        codeElement.textContent = 'Invalid JSON: ' + data;
+      }
+      break;
+      
+    case 'html':
+      codeElement.className = 'language-html';
+      codeElement.textContent = data;
+      break;
+      
+    case 'xml':
+      codeElement.className = 'language-xml';
+      codeElement.textContent = data;
+      break;
+  }
+  
+  codeBlock.appendChild(codeElement);
+  resultDiv.appendChild(codeBlock);
+  hljs.highlightElement(codeElement);
+  
+  // Update stats
+  statusCodeSpan.textContent = `${response.status} ${response.statusText}`;
+  statusCodeSpan.className = response.status >= 200 && response.status < 300 
+    ? 'text-green-400 font-semibold' 
+    : 'text-red-400 font-semibold';
+  
+  responseTimeSpan.textContent = `${response.time.toFixed(0)}ms`;
+  responseSizeSpan.textContent = `${(response.size / 1024).toFixed(2)}KB`;
+};
+
+formatSelect?.addEventListener('change', () => {
+  currentFormat = formatSelect.value as DisplayFormat;
+  if (lastResponse) {
+    displayResponse(lastResponse);
+  }
+});
+
+// Build Request
+function buildRequest(): Request {
+  // Get query params from inputs
+  const paramRows = paramsContainer.querySelectorAll('.flex');
+  const currentParams: KeyValue[] = [];
+  paramRows.forEach(row => {
+    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
+    currentParams.push({
+      key: inputs[0].value,
+      value: inputs[1].value,
+      enabled: checkbox.checked
+    });
+  });
+  
+  // Get headers from inputs
+  const headerRows = headersContainer.querySelectorAll('.flex');
+  const currentHeaders: KeyValue[] = [];
+  headerRows.forEach(row => {
+    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
+    currentHeaders.push({
+      key: inputs[0].value,
+      value: inputs[1].value,
+      enabled: checkbox.checked
+    });
+  });
+  
+  // Build body
+  const bodyType = bodyTypeSelect.value as BodyType;
+  let body: Request['body'];
+  
+  if (bodyType === 'none') {
+    body = undefined;
+  } else if (bodyType === 'raw' || bodyType === 'x-www-form-urlencoded') {
+    body = { type: bodyType, raw: bodyRawTextarea.value };
+  } else if (bodyType === 'json') {
+    body = { type: bodyType, json: bodyJsonTextarea.value };
+  } else if (bodyType === 'form-data') {
+    const formRows = bodyFormDataContainer.querySelectorAll('.flex');
+    const formData: KeyValue[] = [];
+    formRows.forEach(row => {
+      const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
+      formData.push({
+        key: inputs[0].value,
+        value: inputs[1].value,
+        enabled: checkbox.checked
+      });
+    });
+    body = { type: bodyType, formData };
+  }
+  
+  // Build auth
+  const authType = authTypeSelect.value as AuthType;
+  let auth: Request['auth'];
+  
+  if (authType === 'none') {
+    auth = undefined;
+  } else if (authType === 'basic') {
+    const username = (document.getElementById('auth-basic-username') as HTMLInputElement).value;
+    const password = (document.getElementById('auth-basic-password') as HTMLInputElement).value;
+    auth = { type: authType, basic: { username, password } };
+  } else if (authType === 'bearer') {
+    const token = (document.getElementById('auth-bearer-token') as HTMLInputElement).value;
+    auth = { type: authType, bearer: { token } };
+  } else if (authType === 'api-key') {
+    const key = (document.getElementById('auth-apikey-key') as HTMLInputElement).value;
+    const value = (document.getElementById('auth-apikey-value') as HTMLInputElement).value;
+    const addTo = (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value as 'header' | 'query';
+    auth = { type: authType, apiKey: { key, value, addTo } };
+  }
+  
+  return {
+    id: Date.now().toString(),
+    name: 'Untitled Request',
+    method: currentMethod,
+    url: urlInput.value,
+    headers: currentHeaders,
+    body,
+    auth,
+    queryParams: currentParams,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
+// Send Request
+fetchButton?.addEventListener('click', async () => {
+  try {
+    fetchButton.disabled = true;
+    fetchButton.textContent = 'Sending...';
     
-    <div class="mb-4 flex items-center justify-between">
-      <div class="flex items-center">
-        <label for="format-select" class="mr-2">Response Format:</label>
-        <select id="format-select" class="bg-gray-800 text-white p-2 rounded border border-gray-700 cursor-pointer">
-          <option value="raw">Raw</option>
-          <option value="json">JSON</option>
-          <option value="html">HTML</option>
-          <option value="xml">XML</option>
-        </select>
+    const request = buildRequest();
+    const response = await window.electron.sendRequest(request);
+    
+    displayResponse(response);
+  } catch (error) {
+    console.error(error);
+    statusCodeSpan.textContent = 'Error';
+    statusCodeSpan.className = 'text-red-400 font-semibold';
+    resultDiv.textContent = `Error: ${(error as Error).message}`;
+  } finally {
+    fetchButton.disabled = false;
+    fetchButton.textContent = 'Send';
+  }
+});
+
+// Save Request
+saveRequestBtn?.addEventListener('click', async () => {
+  const name = prompt('Enter request name:');
+  if (!name) return;
+  
+  const request = buildRequest();
+  request.name = name;
+  
+  const collections = await window.electron.loadCollections();
+  let collection = collections[0];
+  
+  if (!collection) {
+    collection = {
+      id: Date.now().toString(),
+      name: 'My Requests',
+      folders: [],
+      requests: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+  }
+  
+  collection.requests.push(request);
+  await window.electron.saveCollection(collection);
+  
+  alert('Request saved!');
+});
+
+// View History
+viewHistoryBtn?.addEventListener('click', async () => {
+  const history = await window.electron.getHistory(20);
+  
+  historyContainer.innerHTML = '';
+  
+  history.forEach(entry => {
+    const item = document.createElement('div');
+    item.className = 'bg-gray-800 p-4 rounded mb-2 cursor-pointer hover:bg-gray-700';
+    
+    const method = entry.request.method as HttpMethod;
+    const methodColor = methodColors[method] || 'text-gray-400';
+    
+    item.innerHTML = `
+      <div class="flex justify-between items-center mb-2">
+        <span class="font-semibold ${methodColor}">${method}</span>
+        <span class="text-sm text-gray-400">${new Date(entry.timestamp).toLocaleString()}</span>
       </div>
-      <div>
-        <span class="text-gray-400 mr-2">Status:</span>
-        <span id="status-code" class="text-gray-500">-</span>
+      <div class="text-sm mb-1">${entry.request.url}</div>
+      <div class="text-sm ${entry.response.status >= 200 && entry.response.status < 300 ? 'text-green-400' : 'text-red-400'}">
+        ${entry.response.status} ${entry.response.statusText}
       </div>
-    </div>
+    `;
     
-    <div id="result" class="bg-[#282c34] p-4 rounded overflow-auto max-h-[600px] border border-gray-800"></div>
+    item.onclick = () => {
+      urlInput.value = entry.request.url;
+      if (isHttpMethod(entry.request.method)) {
+        currentMethod = entry.request.method;
+        updateMethodButton();
+      }
+      historyModal.classList.add('hidden');
+    };
     
-    <script type="module" src="./dist/renderer/index.js"></script>
-  </body>
-</html>
+    historyContainer.appendChild(item);
+  });
+  
+  historyModal.classList.remove('hidden');
+});
+
+closeHistoryBtn?.addEventListener('click', () => {
+  historyModal.classList.add('hidden');
+});
+
+// Initialize
+switchTab('params');
 </file>
 
 <file path="package.json">
@@ -598,6 +1502,164 @@ export interface IpcChannels {
     "highlight.js": "^11.9.0"
   }
 }
+</file>
+
+<file path="index.html">
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <title>Req-Rep.io</title>
+    <link href="./styles.css" rel="stylesheet">
+    <link href="./node_modules/highlight.js/styles/atom-one-dark.css" rel="stylesheet">
+  </head>
+  <body class="bg-gray-900 text-white">
+    <div class="flex h-screen">
+      <!-- Main Content -->
+      <div class="flex-1 flex flex-col p-6">
+        <h1 class="text-3xl font-bold mb-4">Req-Rep.io</h1>
+        
+        <!-- URL Bar -->
+        <div class="mb-4 flex items-center gap-3">
+          <div class="relative">
+            <button id="method-button" class="bg-gray-800 text-green-600 font-semibold px-4 py-2 rounded cursor-pointer hover:bg-gray-700 min-w-[120px] text-left flex items-center justify-between gap-3">
+              <span id="method-text">GET</span>
+              <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="#A9AEC1" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+              </svg>
+            </button>
+            <div id="method-dropdown" class="hidden absolute top-full left-0 mt-1 bg-gray-800 rounded shadow-lg border border-gray-700 min-w-[120px] z-50">
+              <div data-method="GET" class="px-4 py-2 text-green-600 hover:bg-gray-700 cursor-pointer font-semibold">GET</div>
+              <div data-method="POST" class="px-4 py-2 text-yellow-600 hover:bg-gray-700 cursor-pointer font-semibold">POST</div>
+              <div data-method="PUT" class="px-4 py-2 text-blue-600 hover:bg-gray-700 cursor-pointer font-semibold">PUT</div>
+              <div data-method="PATCH" class="px-4 py-2 text-pink-600 hover:bg-gray-700 cursor-pointer font-semibold">PATCH</div>
+              <div data-method="DELETE" class="px-4 py-2 text-red-600 hover:bg-gray-700 cursor-pointer font-semibold">DELETE</div>
+              <div data-method="HEAD" class="px-4 py-2 text-green-400 hover:bg-gray-700 cursor-pointer font-semibold">HEAD</div>
+              <div data-method="OPTIONS" class="px-4 py-2 text-purple-600 hover:bg-gray-700 cursor-pointer font-semibold">OPTIONS</div>
+            </div>
+          </div>
+          <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL">
+          <button id="fetch" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-semibold">Send</button>
+          <button id="save-request" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">Save</button>
+          <button id="view-history" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded">History</button>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-700 mb-4">
+          <button id="params-tab" class="px-4 py-2 border-b-2 border-blue-500 text-blue-500 font-semibold">Query Params</button>
+          <button id="headers-tab" class="px-4 py-2 border-b-2 border-transparent text-gray-400 font-semibold">Headers</button>
+          <button id="body-tab" class="px-4 py-2 border-b-2 border-transparent text-gray-400 font-semibold">Body</button>
+          <button id="auth-tab" class="px-4 py-2 border-b-2 border-transparent text-gray-400 font-semibold">Auth</button>
+        </div>
+        
+        <!-- Params Panel -->
+        <div id="params-panel" class="mb-4">
+          <div id="params-container" class="mb-2"></div>
+          <button id="add-param" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Parameter</button>
+        </div>
+        
+        <!-- Headers Panel -->
+        <div id="headers-panel" class="mb-4 hidden">
+          <div id="headers-container" class="mb-2"></div>
+          <button id="add-header" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Header</button>
+        </div>
+        
+        <!-- Body Panel -->
+        <div id="body-panel" class="mb-4 hidden">
+          <select id="body-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
+            <option value="none">None</option>
+            <option value="json">JSON</option>
+            <option value="raw">Raw</option>
+            <option value="form-data">Form Data</option>
+            <option value="x-www-form-urlencoded">x-www-form-urlencoded</option>
+          </select>
+          
+          <div id="body-raw-container" class="hidden">
+            <textarea id="body-raw" class="w-full bg-gray-800 text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder="Enter raw body"></textarea>
+          </div>
+          
+          <div id="body-json-container" class="hidden">
+            <textarea id="body-json" class="w-full bg-gray-800 text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder='{"key": "value"}'></textarea>
+          </div>
+          
+          <div id="body-form-container" class="hidden">
+            <div id="body-formdata-container" class="mb-2"></div>
+            <button id="add-form-field" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Field</button>
+          </div>
+        </div>
+        
+        <!-- Auth Panel -->
+        <div id="auth-panel" class="mb-4 hidden">
+          <select id="auth-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
+            <option value="none">No Auth</option>
+            <option value="basic">Basic Auth</option>
+            <option value="bearer">Bearer Token</option>
+            <option value="api-key">API Key</option>
+          </select>
+          
+          <div id="auth-none" class="text-gray-400">This request does not use any authorization.</div>
+          
+          <div id="auth-basic" class="hidden space-y-3">
+            <input type="text" id="auth-basic-username" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Username">
+            <input type="password" id="auth-basic-password" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Password">
+          </div>
+          
+          <div id="auth-bearer" class="hidden">
+            <input type="text" id="auth-bearer-token" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Token">
+          </div>
+          
+          <div id="auth-apikey" class="hidden space-y-3">
+            <input type="text" id="auth-apikey-key" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Key">
+            <input type="text" id="auth-apikey-value" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Value">
+            <select id="auth-apikey-addto" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700">
+              <option value="header">Add to Header</option>
+              <option value="query">Add to Query Params</option>
+            </select>
+          </div>
+        </div>
+        
+        <!-- Response Section -->
+        <div class="flex-1 flex flex-col bg-gray-800 rounded-lg p-4 overflow-hidden">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-4">
+              <span class="text-gray-400">Status:</span>
+              <span id="status-code" class="text-gray-500">-</span>
+              <span class="text-gray-400">Time:</span>
+              <span id="response-time" class="text-gray-500">-</span>
+              <span class="text-gray-400">Size:</span>
+              <span id="response-size" class="text-gray-500">-</span>
+            </div>
+            <select id="format-select" class="bg-gray-700 text-white p-2 rounded border border-gray-600 cursor-pointer">
+              <option value="raw">Raw</option>
+              <option value="json">JSON</option>
+              <option value="html">HTML</option>
+              <option value="xml">XML</option>
+            </select>
+          </div>
+          
+          <div id="result" class="flex-1 bg-[#282c34] rounded overflow-auto"></div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- History Modal -->
+    <div id="history-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-gray-900 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-2xl font-bold">Request History</h2>
+          <button id="close-history" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+        </div>
+        <div id="history-container" class="flex-1 overflow-auto"></div>
+      </div>
+    </div>
+    
+    <script type="module" src="./dist/renderer/index.js"></script>
+  </body>
+</html>
 </file>
 
 </files>

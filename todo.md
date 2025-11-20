@@ -1,22 +1,18 @@
 # TODO
 
-## readme.md :
+## documentation :
 
-- Explain why someone would use this over Postman
-- Explain why someone would use this over curl
+- Once everything is finished, create a documentation file
+- Explain in detail the GUI and how it works
+- Explain in detail the functionality
+- Explain in detail every file
 
 ## functionality :
 
-- Add support for methods
-- Add support for headers
-- Add support for body
 - Add support for cookies
-- Add support for authentication
 - Add support for saving requests
 - Add support for loading requests
-- Add support for history
 - Add support for ogranizing folders / projects
-- Include any missing functionality from apps like postman
 
 ## UI :
 
