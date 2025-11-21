@@ -11,6 +11,7 @@
 
 - Add support for cookies
 - Add support for ogranizing folders / projects
+- Options for projects / collections, eg : {{baseUrl}}
 
 ## UI :
 
