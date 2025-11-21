@@ -23,6 +23,17 @@ declare global {
 type DisplayFormat = 'raw' | 'json' | 'html' | 'xml';
 type TabType = 'params' | 'headers' | 'body' | 'auth';
 
+interface Tab {
+  id: string;
+  name: string;
+  request: Request;
+  response: HttpResponse | null;
+}
+
+let tabs: Tab[] = [];
+let activeTabId: string = '';
+let saveDebounceTimer: number | null = null;
+
 // UI Elements
 const fetchButton = document.getElementById('fetch') as HTMLButtonElement;
 const urlInput = document.getElementById('url') as HTMLInputElement;
@@ -34,6 +45,9 @@ const methodDropdown = document.getElementById('method-dropdown') as HTMLDivElem
 const statusCodeSpan = document.getElementById('status-code') as HTMLSpanElement;
 const responseTimeSpan = document.getElementById('response-time') as HTMLSpanElement;
 const responseSizeSpan = document.getElementById('response-size') as HTMLSpanElement;
+
+const tabsContainer = document.getElementById('tabs-container') as HTMLDivElement;
+const newTabBtn = document.getElementById('new-tab') as HTMLButtonElement;
 
 const paramsTab = document.getElementById('params-tab') as HTMLButtonElement;
 const headersTab = document.getElementById('headers-tab') as HTMLButtonElement;
@@ -91,6 +105,226 @@ const methodColors: Record<HttpMethod, string> = {
   'HEAD': 'text-green-400',
   'OPTIONS': 'text-purple-600'
 };
+
+// Debounced save function
+function debouncedSaveCurrentTab(): void {
+  if (saveDebounceTimer !== null) {
+    clearTimeout(saveDebounceTimer);
+  }
+  
+  saveDebounceTimer = window.setTimeout(() => {
+    saveCurrentTab();
+    saveDebounceTimer = null;
+  }, 500);
+}
+
+// Create default request
+function createDefaultRequest(): Request {
+  return {
+    id: Date.now().toString(),
+    name: 'Untitled Request',
+    method: 'GET',
+    url: '',
+    headers: [],
+    queryParams: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
+// Create new tab
+function createNewTab(): void {
+  const tab: Tab = {
+    id: Date.now().toString(),
+    name: 'New Request',
+    request: createDefaultRequest(),
+    response: null
+  };
+  
+  tabs.push(tab);
+  activeTabId = tab.id;
+  renderTabs();
+  loadTab(tab.id);
+}
+
+// Render tabs
+function renderTabs(): void {
+  tabsContainer.innerHTML = '';
+  
+  tabs.forEach(tab => {
+    const tabElement = document.createElement('div');
+    tabElement.className = `flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer ${
+      activeTabId === tab.id ? 'bg-gray-800 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-750'
+    }`;
+    
+    const tabName = document.createElement('span');
+    tabName.textContent = tab.name;
+    tabName.className = 'text-sm';
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    closeBtn.className = 'text-lg hover:text-red-400 ml-2';
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      closeTab(tab.id);
+    };
+    
+    tabElement.onclick = () => {
+      activeTabId = tab.id;
+      renderTabs();
+      loadTab(tab.id);
+    };
+    
+    tabElement.appendChild(tabName);
+    if (tabs.length > 1) {
+      tabElement.appendChild(closeBtn);
+    }
+    
+    tabsContainer.appendChild(tabElement);
+  });
+}
+
+// Close tab
+function closeTab(tabId: string): void {
+  if (tabs.length === 1) return; // Don't close the last tab
+  
+  const index = tabs.findIndex(t => t.id === tabId);
+  if (index === -1) return;
+  
+  tabs.splice(index, 1);
+  
+  if (activeTabId === tabId) {
+    activeTabId = tabs[Math.max(0, index - 1)].id;
+  }
+  
+  renderTabs();
+  loadTab(activeTabId);
+}
+
+// Save current tab state
+function saveCurrentTab(): void {
+  const tab = tabs.find(t => t.id === activeTabId);
+  if (!tab) return;
+  
+  tab.request = buildRequest();
+  tab.response = lastResponse;
+  
+  // Update tab name based on URL
+  if (tab.request.url) {
+    try {
+      const url = new URL(tab.request.url);
+      const urlPath = url.pathname.split('/').filter(p => p).join('/') || url.hostname;
+      tab.name = `${tab.request.method} ${urlPath.substring(0, 20)}${urlPath.length > 20 ? '...' : ''}`;
+    } catch {
+      tab.name = `${tab.request.method} Request`;
+    }
+  } else {
+    tab.name = 'New Request';
+  }
+  
+  renderTabs();
+}
+
+// Load tab
+function loadTab(tabId: string): void {
+  const tab = tabs.find(t => t.id === tabId);
+  if (!tab) return;
+  
+  const request = tab.request;
+  
+  // Populate URL
+  urlInput.value = request.url;
+  
+  // Set method
+  if (isHttpMethod(request.method)) {
+    currentMethod = request.method;
+    updateMethodButton();
+  }
+  
+  // Populate query params
+  queryParams = request.queryParams || [];
+  renderParams();
+  
+  // Populate headers
+  headers = request.headers || [];
+  renderHeaders();
+  
+  // Populate body
+  if (request.body) {
+    bodyTypeSelect.value = request.body.type;
+    bodyTypeSelect.dispatchEvent(new Event('change'));
+    
+    switch (request.body.type) {
+      case 'raw':
+      case 'x-www-form-urlencoded':
+        bodyRawTextarea.value = request.body.raw || '';
+        break;
+      case 'json':
+        bodyJsonTextarea.value = typeof request.body.json === 'string' 
+          ? request.body.json 
+          : JSON.stringify(request.body.json, null, 2);
+        break;
+      case 'form-data':
+        formFields = request.body.formData || [];
+        renderFormFields();
+        break;
+    }
+  } else {
+    bodyTypeSelect.value = 'none';
+    bodyTypeSelect.dispatchEvent(new Event('change'));
+  }
+  
+  // Populate auth
+  if (request.auth) {
+    authTypeSelect.value = request.auth.type;
+    authTypeSelect.dispatchEvent(new Event('change'));
+    
+    switch (request.auth.type) {
+      case 'basic':
+        if (request.auth.basic) {
+          (document.getElementById('auth-basic-username') as HTMLInputElement).value = request.auth.basic.username || '';
+          (document.getElementById('auth-basic-password') as HTMLInputElement).value = request.auth.basic.password || '';
+        }
+        break;
+      case 'bearer':
+        if (request.auth.bearer) {
+          (document.getElementById('auth-bearer-token') as HTMLInputElement).value = request.auth.bearer.token || '';
+        }
+        break;
+      case 'api-key':
+        if (request.auth.apiKey) {
+          (document.getElementById('auth-apikey-key') as HTMLInputElement).value = request.auth.apiKey.key || '';
+          (document.getElementById('auth-apikey-value') as HTMLInputElement).value = request.auth.apiKey.value || '';
+          (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value = request.auth.apiKey.addTo || 'header';
+        }
+        break;
+    }
+  } else {
+    authTypeSelect.value = 'none';
+    authTypeSelect.dispatchEvent(new Event('change'));
+  }
+  
+  // Load response if available
+  if (tab.response) {
+    lastResponse = tab.response;
+    displayResponse(tab.response);
+  } else {
+    lastResponse = null;
+    resultDiv.innerHTML = '<div class="text-gray-400 p-4">No response yet</div>';
+    statusCodeSpan.textContent = '-';
+    statusCodeSpan.className = 'text-gray-500';
+    responseTimeSpan.textContent = '-';
+    responseSizeSpan.textContent = '-';
+  }
+}
+
+// New tab event listener
+newTabBtn?.addEventListener('click', () => {
+  createNewTab();
+});
+
+// Input event listener with debounce
+urlInput?.addEventListener('input', () => debouncedSaveCurrentTab());
 
 // Tab Management
 function switchTab(tab: TabType) {
@@ -158,6 +392,7 @@ methodOptions.forEach(option => {
       currentMethod = method;
       updateMethodButton();
       methodDropdown.classList.add('hidden');
+      debouncedSaveCurrentTab();
     }
   });
 });
@@ -180,18 +415,21 @@ function createKeyValueRow(
   checkbox.type = 'checkbox';
   checkbox.checked = enabled;
   checkbox.className = 'w-5 h-5';
+  checkbox.addEventListener('change', debouncedSaveCurrentTab);
   
   const keyInput = document.createElement('input');
   keyInput.type = 'text';
   keyInput.value = key;
   keyInput.placeholder = 'Key';
   keyInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
+  keyInput.addEventListener('input', debouncedSaveCurrentTab);
   
   const valueInput = document.createElement('input');
   valueInput.type = 'text';
   valueInput.value = value;
   valueInput.placeholder = 'Value';
   valueInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
+  valueInput.addEventListener('input', debouncedSaveCurrentTab);
   
   const deleteBtn = document.createElement('button');
   deleteBtn.textContent = '×';
@@ -213,6 +451,7 @@ function addParam() {
   const row = createKeyValueRow('', '', true, () => {
     queryParams.splice(index, 1);
     renderParams();
+    debouncedSaveCurrentTab();
   });
   
   paramsContainer.appendChild(row);
@@ -224,6 +463,7 @@ function renderParams() {
     const row = createKeyValueRow(param.key, param.value, param.enabled, () => {
       queryParams.splice(index, 1);
       renderParams();
+      debouncedSaveCurrentTab();
     });
     paramsContainer.appendChild(row);
   });
@@ -236,6 +476,7 @@ function addHeader() {
   const row = createKeyValueRow('', '', true, () => {
     headers.splice(index, 1);
     renderHeaders();
+    debouncedSaveCurrentTab();
   });
   
   headersContainer.appendChild(row);
@@ -247,6 +488,7 @@ function renderHeaders() {
     const row = createKeyValueRow(header.key, header.value, header.enabled, () => {
       headers.splice(index, 1);
       renderHeaders();
+      debouncedSaveCurrentTab();
     });
     headersContainer.appendChild(row);
   });
@@ -259,6 +501,7 @@ function addFormField() {
   const row = createKeyValueRow('', '', true, () => {
     formFields.splice(index, 1);
     renderFormFields();
+    debouncedSaveCurrentTab();
   });
   
   bodyFormDataContainer.appendChild(row);
@@ -270,6 +513,7 @@ function renderFormFields() {
     const row = createKeyValueRow(field.key, field.value, field.enabled, () => {
       formFields.splice(index, 1);
       renderFormFields();
+      debouncedSaveCurrentTab();
     });
     bodyFormDataContainer.appendChild(row);
   });
@@ -297,7 +541,13 @@ bodyTypeSelect?.addEventListener('change', () => {
       bodyFormContainer.classList.remove('hidden');
       break;
   }
+  
+  debouncedSaveCurrentTab();
 });
+
+// Add debounced save to body textareas
+bodyRawTextarea?.addEventListener('input', debouncedSaveCurrentTab);
+bodyJsonTextarea?.addEventListener('input', debouncedSaveCurrentTab);
 
 // Auth Type Management
 authTypeSelect?.addEventListener('change', () => {
@@ -319,7 +569,17 @@ authTypeSelect?.addEventListener('change', () => {
       authApiKeyPanel.classList.remove('hidden');
       break;
   }
+  
+  debouncedSaveCurrentTab();
 });
+
+// Add debounced save to auth inputs
+document.getElementById('auth-basic-username')?.addEventListener('input', debouncedSaveCurrentTab);
+document.getElementById('auth-basic-password')?.addEventListener('input', debouncedSaveCurrentTab);
+document.getElementById('auth-bearer-token')?.addEventListener('input', debouncedSaveCurrentTab);
+document.getElementById('auth-apikey-key')?.addEventListener('input', debouncedSaveCurrentTab);
+document.getElementById('auth-apikey-value')?.addEventListener('input', debouncedSaveCurrentTab);
+document.getElementById('auth-apikey-addto')?.addEventListener('change', debouncedSaveCurrentTab);
 
 // Response Display
 const getStatusText = (code: number): string => {
@@ -520,10 +780,13 @@ fetchButton?.addEventListener('click', async () => {
     fetchButton.disabled = true;
     fetchButton.textContent = 'Sending...';
     
+    saveCurrentTab(); // Save immediately before sending
+    
     const request = buildRequest();
     const response = await window.electron.sendRequest(request);
     
     displayResponse(response);
+    saveCurrentTab(); // Save after response
   } catch (error) {
     console.error(error);
     statusCodeSpan.textContent = 'Error';
@@ -562,79 +825,14 @@ loadRequestBtn?.addEventListener('click', async () => {
     const request = await window.electron.importRequest();
     
     if (!request) {
-      return; // User cancelled or file was invalid
+      return;
     }
     
-    // Populate URL
-    urlInput.value = request.url;
-    
-    // Set method
-    if (isHttpMethod(request.method)) {
-      currentMethod = request.method;
-      updateMethodButton();
-    }
-    
-    // Populate query params
-    queryParams = request.queryParams || [];
-    renderParams();
-    
-    // Populate headers
-    headers = request.headers || [];
-    renderHeaders();
-    
-    // Populate body
-    if (request.body) {
-      bodyTypeSelect.value = request.body.type;
-      bodyTypeSelect.dispatchEvent(new Event('change'));
-      
-      switch (request.body.type) {
-        case 'raw':
-        case 'x-www-form-urlencoded':
-          bodyRawTextarea.value = request.body.raw || '';
-          break;
-        case 'json':
-          bodyJsonTextarea.value = typeof request.body.json === 'string' 
-            ? request.body.json 
-            : JSON.stringify(request.body.json, null, 2);
-          break;
-        case 'form-data':
-          formFields = request.body.formData || [];
-          renderFormFields();
-          break;
-      }
-    } else {
-      bodyTypeSelect.value = 'none';
-      bodyTypeSelect.dispatchEvent(new Event('change'));
-    }
-    
-    // Populate auth
-    if (request.auth) {
-      authTypeSelect.value = request.auth.type;
-      authTypeSelect.dispatchEvent(new Event('change'));
-      
-      switch (request.auth.type) {
-        case 'basic':
-          if (request.auth.basic) {
-            (document.getElementById('auth-basic-username') as HTMLInputElement).value = request.auth.basic.username || '';
-            (document.getElementById('auth-basic-password') as HTMLInputElement).value = request.auth.basic.password || '';
-          }
-          break;
-        case 'bearer':
-          if (request.auth.bearer) {
-            (document.getElementById('auth-bearer-token') as HTMLInputElement).value = request.auth.bearer.token || '';
-          }
-          break;
-        case 'api-key':
-          if (request.auth.apiKey) {
-            (document.getElementById('auth-apikey-key') as HTMLInputElement).value = request.auth.apiKey.key || '';
-            (document.getElementById('auth-apikey-value') as HTMLInputElement).value = request.auth.apiKey.value || '';
-            (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value = request.auth.apiKey.addTo || 'header';
-          }
-          break;
-      }
-    } else {
-      authTypeSelect.value = 'none';
-      authTypeSelect.dispatchEvent(new Event('change'));
+    const tab = tabs.find(t => t.id === activeTabId);
+    if (tab) {
+      tab.request = request;
+      tab.response = null;
+      loadTab(activeTabId);
     }
     
   } catch (error) {
@@ -667,10 +865,11 @@ viewHistoryBtn?.addEventListener('click', async () => {
     `;
     
     item.onclick = () => {
-      urlInput.value = entry.request.url;
-      if (isHttpMethod(entry.request.method)) {
-        currentMethod = entry.request.method;
-        updateMethodButton();
+      const tab = tabs.find(t => t.id === activeTabId);
+      if (tab) {
+        tab.request = entry.request;
+        tab.response = entry.response;
+        loadTab(activeTabId);
       }
       historyModal.classList.add('hidden');
     };
@@ -695,4 +894,5 @@ closeHistoryBtn?.addEventListener('click', () => {
 });
 
 // Initialize
+createNewTab();
 switchTab('params');
