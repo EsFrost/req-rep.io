@@ -625,24 +625,6 @@ contextBridge.exposeInMainWorld('electron', {
 });
 </file>
 
-<file path="src/styles/input.css">
-@import 'highlight.js/styles/atom-one-dark.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer components {
-  #result pre {
-    @apply m-0 bg-transparent;
-  }
-  
-  #result code {
-    @apply block p-4 rounded font-mono text-sm leading-relaxed;
-  }
-}
-</file>
-
 <file path="tsconfig.json">
 {
   "compilerOptions": {
@@ -905,6 +887,69 @@ In case you want an intuitive app with GUI since curl is a command line tool and
 If the final project's size is too large, please download the source code and build it yourself.
 
 Any and all suggestions are welcome.
+</file>
+
+<file path="src/styles/input.css">
+@import 'highlight.js/styles/atom-one-dark.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  #result {
+    overflow: auto !important;
+  }
+  
+  #result pre {
+    margin: 0 !important;
+    background: transparent !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+  
+  #result code {
+    display: block !important;
+    padding: 1rem !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+}
+</file>
+
+<file path="package.json">
+{
+  "name": "reqio-electron",
+  "version": "1.0.0",
+  "description": "App to test API endpoints using curl and electron",
+  "license": "ISC",
+  "author": "Sigmund Frost",
+  "type": "commonjs",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "start": "npm run build:css && npm run build:ts && npm run build:renderer && electron .",
+    "dev": "npm run watch:css & npm run watch:ts & npm run watch:renderer & electron .",
+    "build:css": "tailwindcss -i ./src/styles/input.css -o ./styles.css",
+    "watch:css": "tailwindcss -i ./src/styles/input.css -o ./styles.css --watch",
+    "build:ts": "tsc",
+    "watch:ts": "tsc --watch",
+    "build:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron",
+    "watch:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron --watch",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "electron": "^39.2.2",
+    "esbuild": "^0.24.0",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "highlight.js": "^11.9.0"
+  }
+}
 </file>
 
 <file path="src/renderer/index.ts">
@@ -1269,7 +1314,17 @@ const displayResponse = (response: HttpResponse) => {
   resultDiv.innerHTML = '';
   
   const codeBlock = document.createElement('pre');
+  codeBlock.style.margin = '0';
+  codeBlock.style.width = '100%';
+  codeBlock.style.overflow = 'visible';
+  
   const codeElement = document.createElement('code');
+  codeElement.style.display = 'block';
+  codeElement.style.padding = '1rem';
+  codeElement.style.whiteSpace = 'pre';
+  codeElement.style.overflowWrap = 'normal';
+  codeElement.style.wordBreak = 'normal';
+  
   const data = response.body;
   
   switch (currentFormat) {
@@ -1506,39 +1561,6 @@ closeHistoryBtn?.addEventListener('click', () => {
 switchTab('params');
 </file>
 
-<file path="package.json">
-{
-  "name": "reqio-electron",
-  "version": "1.0.0",
-  "description": "App to test API endpoints using curl and electron",
-  "license": "ISC",
-  "author": "Sigmund Frost",
-  "type": "commonjs",
-  "main": "dist/main/index.js",
-  "scripts": {
-    "start": "npm run build:css && npm run build:ts && npm run build:renderer && electron .",
-    "dev": "npm run watch:css & npm run watch:ts & npm run watch:renderer & electron .",
-    "build:css": "tailwindcss -i ./src/styles/input.css -o ./styles.css",
-    "watch:css": "tailwindcss -i ./src/styles/input.css -o ./styles.css --watch",
-    "build:ts": "tsc",
-    "watch:ts": "tsc --watch",
-    "build:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron",
-    "watch:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "devDependencies": {
-    "@types/node": "^22.10.2",
-    "electron": "^39.2.2",
-    "esbuild": "^0.24.0",
-    "tailwindcss": "^3.4.1",
-    "typescript": "^5.7.2"
-  },
-  "dependencies": {
-    "highlight.js": "^11.9.0"
-  }
-}
-</file>
-
 <file path="index.html">
 <!DOCTYPE html>
 <html>
@@ -1658,7 +1680,7 @@ switchTab('params');
         </div>
         
         <!-- Response Section -->
-        <div class="flex-1 flex flex-col bg-gray-800 rounded-lg p-4 overflow-hidden">
+        <div class="bg-gray-800 rounded-lg p-4 flex flex-col min-h-0 max-w-[calc(100vw-3rem)]">
           <div class="flex items-center justify-between mb-3">
             <div class="flex items-center gap-4">
               <span class="text-gray-400">Status:</span>
@@ -1676,7 +1698,7 @@ switchTab('params');
             </select>
           </div>
           
-          <div id="result" class="flex-1 bg-[#282c34] rounded overflow-auto"></div>
+          <div id="result" class="bg-[#282c34] rounded" style="overflow: auto; min-height: 0;"></div>
         </div>
       </div>
     </div>

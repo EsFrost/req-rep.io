@@ -14,6 +14,7 @@ declare global {
       setActiveEnvironment: (id: string) => Promise<void>;
       getHistory: (limit?: number) => Promise<any[]>;
       clearHistory: () => Promise<void>;
+      exportRequest: (request: Request) => Promise<void>;
     };
   }
 }
@@ -533,30 +534,23 @@ fetchButton?.addEventListener('click', async () => {
 
 // Save Request
 saveRequestBtn?.addEventListener('click', async () => {
-  const name = prompt('Enter request name:');
-  if (!name) return;
-  
   const request = buildRequest();
-  request.name = name;
   
-  const collections = await window.electron.loadCollections();
-  let collection = collections[0];
-  
-  if (!collection) {
-    collection = {
-      id: Date.now().toString(),
-      name: 'My Requests',
-      folders: [],
-      requests: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
+  // Use a default name based on method and URL
+  try {
+    const url = new URL(request.url);
+    const urlPath = url.pathname.split('/').filter(p => p).join('_') || url.hostname.replace(/\./g, '_');
+    request.name = `${request.method}_${urlPath}`;
+  } catch {
+    // If URL is invalid, just use method and timestamp
+    request.name = `${request.method}_${Date.now()}`;
   }
   
-  collection.requests.push(request);
-  await window.electron.saveCollection(collection);
-  
-  alert('Request saved!');
+  try {
+    await window.electron.exportRequest(request);
+  } catch (error) {
+    console.error('Failed to export request:', error);
+  }
 });
 
 // View History

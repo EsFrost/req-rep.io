@@ -1,9 +1,10 @@
-import { ipcMain } from 'electron';
+import { ipcMain, dialog } from 'electron';
 import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../../shared/types';
 import { RequestHandler } from './request-handler';
 import { CollectionStorage } from '../storage/collections';
 import { EnvironmentStorage } from '../storage/environments';
 import { HistoryStorage } from '../storage/history';
+import * as fs from 'fs';
 
 const requestHandler = new RequestHandler();
 const collectionStorage = new CollectionStorage();
@@ -26,6 +27,22 @@ export const registerHandlers = (): void => {
     }
     
     return response;
+  });
+  
+  // Export request to JSON file
+  ipcMain.handle('request:export', async (_event, request: Request): Promise<void> => {
+    const { filePath } = await dialog.showSaveDialog({
+      title: 'Export Request',
+      defaultPath: `${request.name || 'request'}.json`,
+      filters: [
+        { name: 'JSON Files', extensions: ['json'] }
+      ]
+    });
+    
+    if (filePath) {
+      const requestData = JSON.stringify(request, null, 2);
+      fs.writeFileSync(filePath, requestData, 'utf-8');
+    }
   });
   
   // Collection management

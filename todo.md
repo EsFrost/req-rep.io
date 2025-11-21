@@ -21,3 +21,9 @@
 - Add system mode
 - Fix any missing UI elements
 - Fix any UI elements that are not working / bugging
+
+## Website :
+
+- Create a branch for the website
+- Create a website for the app
+- Locally create the website files in a different folder to avoid conflicts and confusion
