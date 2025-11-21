@@ -10,8 +10,6 @@
 ## functionality :
 
 - Add support for cookies
-- Add support for saving requests
-- Add support for loading requests
 - Add support for ogranizing folders / projects
 
 ## UI :

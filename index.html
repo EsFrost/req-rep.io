@@ -145,7 +145,10 @@
       <div class="bg-gray-900 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-2xl font-bold">Request History</h2>
-          <button id="close-history" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+          <div class="flex gap-2">
+            <button id="clear-history" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">Clear History</button>
+            <button id="close-history" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+          </div>
         </div>
         <div id="history-container" class="flex-1 overflow-auto"></div>
       </div>

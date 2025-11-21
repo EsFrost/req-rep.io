@@ -70,6 +70,7 @@ const loadRequestBtn = document.getElementById('load-request') as HTMLButtonElem
 const viewHistoryBtn = document.getElementById('view-history') as HTMLButtonElement;
 const historyModal = document.getElementById('history-modal') as HTMLDivElement;
 const historyContainer = document.getElementById('history-container') as HTMLDivElement;
+const clearHistoryBtn = document.getElementById('clear-history') as HTMLButtonElement;
 const closeHistoryBtn = document.getElementById('close-history') as HTMLButtonElement;
 
 // State
@@ -680,6 +681,15 @@ viewHistoryBtn?.addEventListener('click', async () => {
   historyModal.classList.remove('hidden');
 });
 
+// Clear history
+clearHistoryBtn?.addEventListener('click', async () => {
+  if (confirm('Are you sure you want to clear all history? This cannot be undone.')) {
+    await window.electron.clearHistory();
+    historyContainer.innerHTML = '<div class="text-gray-400 text-center py-8">History cleared</div>';
+  }
+});
+
+// Close history modal
 closeHistoryBtn?.addEventListener('click', () => {
   historyModal.classList.add('hidden');
 });

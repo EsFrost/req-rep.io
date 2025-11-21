@@ -554,6 +554,16 @@ module.exports = {
 }
 </file>
 
+<file path=".gitignore">
+node_modules
+/node_modules
+*node_modules/*
+
+styles.css
+
+dist
+</file>
+
 <file path="todo.md">
 # TODO
 
@@ -567,8 +577,6 @@ module.exports = {
 ## functionality :
 
 - Add support for cookies
-- Add support for saving requests
-- Add support for loading requests
 - Add support for ogranizing folders / projects
 
 ## UI :
@@ -578,51 +586,12 @@ module.exports = {
 - Add system mode
 - Fix any missing UI elements
 - Fix any UI elements that are not working / bugging
-</file>
 
-<file path=".gitignore">
-node_modules
-/node_modules
-*node_modules/*
+## Website :
 
-styles.css
-
-dist
-</file>
-
-<file path="src/preload/index.ts">
-import { contextBridge, ipcRenderer } from 'electron';
-import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../shared/types';
-
-contextBridge.exposeInMainWorld('electron', {
-  // Request
-  sendRequest: (request: Request): Promise<HttpResponse> => 
-    ipcRenderer.invoke('request:send', request),
-  
-  // Collections
-  saveCollection: (collection: Collection): Promise<void> => 
-    ipcRenderer.invoke('collection:save', collection),
-  loadCollections: (): Promise<Collection[]> => 
-    ipcRenderer.invoke('collection:load'),
-  deleteCollection: (id: string): Promise<void> => 
-    ipcRenderer.invoke('collection:delete', id),
-  
-  // Environments
-  saveEnvironment: (environment: Environment): Promise<void> => 
-    ipcRenderer.invoke('environment:save', environment),
-  loadEnvironments: (): Promise<Environment[]> => 
-    ipcRenderer.invoke('environment:load'),
-  deleteEnvironment: (id: string): Promise<void> => 
-    ipcRenderer.invoke('environment:delete', id),
-  setActiveEnvironment: (id: string): Promise<void> => 
-    ipcRenderer.invoke('environment:setActive', id),
-  
-  // History
-  getHistory: (limit?: number): Promise<HistoryEntry[]> => 
-    ipcRenderer.invoke('history:get', limit),
-  clearHistory: (): Promise<void> => 
-    ipcRenderer.invoke('history:clear'),
-});
+- Create a branch for the website
+- Create a website for the app
+- Locally create the website files in a different folder to avoid conflicts and confusion
 </file>
 
 <file path="tsconfig.json">
@@ -661,78 +630,6 @@ contextBridge.exposeInMainWorld('electron', {
   "include": ["src/renderer/**/*", "src/shared/**/*"],
   "exclude": ["node_modules"]
 }
-</file>
-
-<file path="src/main/ipc/handlers.ts">
-import { ipcMain } from 'electron';
-import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../../shared/types';
-import { RequestHandler } from './request-handler';
-import { CollectionStorage } from '../storage/collections';
-import { EnvironmentStorage } from '../storage/environments';
-import { HistoryStorage } from '../storage/history';
-
-const requestHandler = new RequestHandler();
-const collectionStorage = new CollectionStorage();
-const environmentStorage = new EnvironmentStorage();
-const historyStorage = new HistoryStorage();
-
-export const registerHandlers = (): void => {
-  // Send HTTP request
-  ipcMain.handle('request:send', async (_event, request: Request): Promise<HttpResponse> => {
-    const response = await requestHandler.execute(request);
-    
-    // Only save to history if we got a real response (not an error)
-    if (response.status > 0) {
-      historyStorage.add({
-        id: Date.now().toString(),
-        request,
-        response,
-        timestamp: Date.now()
-      });
-    }
-    
-    return response;
-  });
-  
-  // Collection management
-  ipcMain.handle('collection:save', async (_event, collection: Collection): Promise<void> => {
-    collectionStorage.save(collection);
-  });
-  
-  ipcMain.handle('collection:load', async (): Promise<Collection[]> => {
-    return collectionStorage.loadAll();
-  });
-  
-  ipcMain.handle('collection:delete', async (_event, id: string): Promise<void> => {
-    collectionStorage.delete(id);
-  });
-  
-  // Environment management
-  ipcMain.handle('environment:save', async (_event, environment: Environment): Promise<void> => {
-    environmentStorage.save(environment);
-  });
-  
-  ipcMain.handle('environment:load', async (): Promise<Environment[]> => {
-    return environmentStorage.loadAll();
-  });
-  
-  ipcMain.handle('environment:delete', async (_event, id: string): Promise<void> => {
-    environmentStorage.delete(id);
-  });
-  
-  ipcMain.handle('environment:setActive', async (_event, id: string): Promise<void> => {
-    environmentStorage.setActive(id);
-  });
-  
-  // History management
-  ipcMain.handle('history:get', async (_event, limit?: number): Promise<HistoryEntry[]> => {
-    return historyStorage.get(limit);
-  });
-  
-  ipcMain.handle('history:clear', async (): Promise<void> => {
-    historyStorage.clear();
-  });
-};
 </file>
 
 <file path="src/shared/types.ts">
@@ -889,6 +786,47 @@ If the final project's size is too large, please download the source code and bu
 Any and all suggestions are welcome.
 </file>
 
+<file path="src/preload/index.ts">
+import { contextBridge, ipcRenderer } from 'electron';
+import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../shared/types';
+
+contextBridge.exposeInMainWorld('electron', {
+  // Request
+  sendRequest: (request: Request): Promise<HttpResponse> => 
+    ipcRenderer.invoke('request:send', request),
+  
+  // Collections
+  saveCollection: (collection: Collection): Promise<void> => 
+    ipcRenderer.invoke('collection:save', collection),
+  loadCollections: (): Promise<Collection[]> => 
+    ipcRenderer.invoke('collection:load'),
+  deleteCollection: (id: string): Promise<void> => 
+    ipcRenderer.invoke('collection:delete', id),
+  
+  // Environments
+  saveEnvironment: (environment: Environment): Promise<void> => 
+    ipcRenderer.invoke('environment:save', environment),
+  loadEnvironments: (): Promise<Environment[]> => 
+    ipcRenderer.invoke('environment:load'),
+  deleteEnvironment: (id: string): Promise<void> => 
+    ipcRenderer.invoke('environment:delete', id),
+  setActiveEnvironment: (id: string): Promise<void> => 
+    ipcRenderer.invoke('environment:setActive', id),
+  
+  // History
+  getHistory: (limit?: number): Promise<HistoryEntry[]> => 
+    ipcRenderer.invoke('history:get', limit),
+  clearHistory: (): Promise<void> => 
+    ipcRenderer.invoke('history:clear'),
+  
+  // Export/Import Request
+  exportRequest: (request: Request): Promise<void> => 
+    ipcRenderer.invoke('request:export', request),
+  importRequest: (): Promise<Request | null> => 
+    ipcRenderer.invoke('request:import'),
+});
+</file>
+
 <file path="src/styles/input.css">
 @import 'highlight.js/styles/atom-one-dark.css';
 
@@ -917,6 +855,119 @@ Any and all suggestions are welcome.
     overflow-wrap: break-word !important;
   }
 }
+</file>
+
+<file path="src/main/ipc/handlers.ts">
+import { ipcMain, dialog } from 'electron';
+import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../../shared/types';
+import { RequestHandler } from './request-handler';
+import { CollectionStorage } from '../storage/collections';
+import { EnvironmentStorage } from '../storage/environments';
+import { HistoryStorage } from '../storage/history';
+import * as fs from 'fs';
+
+const requestHandler = new RequestHandler();
+const collectionStorage = new CollectionStorage();
+const environmentStorage = new EnvironmentStorage();
+const historyStorage = new HistoryStorage();
+
+export const registerHandlers = (): void => {
+  // Send HTTP request
+  ipcMain.handle('request:send', async (_event, request: Request): Promise<HttpResponse> => {
+    const response = await requestHandler.execute(request);
+    
+    // Only save to history if we got a real response (not an error)
+    if (response.status > 0) {
+      historyStorage.add({
+        id: Date.now().toString(),
+        request,
+        response,
+        timestamp: Date.now()
+      });
+    }
+    
+    return response;
+  });
+  
+  // Export request to JSON file
+  ipcMain.handle('request:export', async (_event, request: Request): Promise<void> => {
+    const { filePath } = await dialog.showSaveDialog({
+      title: 'Export Request',
+      defaultPath: `${request.name || 'request'}.json`,
+      filters: [
+        { name: 'JSON Files', extensions: ['json'] }
+      ]
+    });
+    
+    if (filePath) {
+      const requestData = JSON.stringify(request, null, 2);
+      fs.writeFileSync(filePath, requestData, 'utf-8');
+    }
+  });
+  
+  // Import request from JSON file
+  ipcMain.handle('request:import', async (): Promise<Request | null> => {
+    const { filePaths } = await dialog.showOpenDialog({
+      title: 'Import Request',
+      filters: [
+        { name: 'JSON Files', extensions: ['json'] }
+      ],
+      properties: ['openFile']
+    });
+    
+    if (filePaths && filePaths.length > 0) {
+      try {
+        const fileContent = fs.readFileSync(filePaths[0], 'utf-8');
+        const request = JSON.parse(fileContent) as Request;
+        return request;
+      } catch (error) {
+        console.error('Failed to parse request file:', error);
+        return null;
+      }
+    }
+    
+    return null;
+  });
+  
+  // Collection management
+  ipcMain.handle('collection:save', async (_event, collection: Collection): Promise<void> => {
+    collectionStorage.save(collection);
+  });
+  
+  ipcMain.handle('collection:load', async (): Promise<Collection[]> => {
+    return collectionStorage.loadAll();
+  });
+  
+  ipcMain.handle('collection:delete', async (_event, id: string): Promise<void> => {
+    collectionStorage.delete(id);
+  });
+  
+  // Environment management
+  ipcMain.handle('environment:save', async (_event, environment: Environment): Promise<void> => {
+    environmentStorage.save(environment);
+  });
+  
+  ipcMain.handle('environment:load', async (): Promise<Environment[]> => {
+    return environmentStorage.loadAll();
+  });
+  
+  ipcMain.handle('environment:delete', async (_event, id: string): Promise<void> => {
+    environmentStorage.delete(id);
+  });
+  
+  ipcMain.handle('environment:setActive', async (_event, id: string): Promise<void> => {
+    environmentStorage.setActive(id);
+  });
+  
+  // History management
+  ipcMain.handle('history:get', async (_event, limit?: number): Promise<HistoryEntry[]> => {
+    return historyStorage.get(limit);
+  });
+  
+  ipcMain.handle('history:clear', async (): Promise<void> => {
+    historyStorage.clear();
+  });
+};
 </file>
 
 <file path="package.json">
@@ -969,6 +1020,8 @@ declare global {
       setActiveEnvironment: (id: string) => Promise<void>;
       getHistory: (limit?: number) => Promise<any[]>;
       clearHistory: () => Promise<void>;
+      exportRequest: (request: Request) => Promise<void>;
+      importRequest: () => Promise<Request | null>;
     };
   }
 }
@@ -1019,6 +1072,7 @@ const authBearerPanel = document.getElementById('auth-bearer') as HTMLDivElement
 const authApiKeyPanel = document.getElementById('auth-apikey') as HTMLDivElement;
 
 const saveRequestBtn = document.getElementById('save-request') as HTMLButtonElement;
+const loadRequestBtn = document.getElementById('load-request') as HTMLButtonElement;
 const viewHistoryBtn = document.getElementById('view-history') as HTMLButtonElement;
 const historyModal = document.getElementById('history-modal') as HTMLDivElement;
 const historyContainer = document.getElementById('history-container') as HTMLDivElement;
@@ -1488,30 +1542,109 @@ fetchButton?.addEventListener('click', async () => {
 
 // Save Request
 saveRequestBtn?.addEventListener('click', async () => {
-  const name = prompt('Enter request name:');
-  if (!name) return;
-  
   const request = buildRequest();
-  request.name = name;
   
-  const collections = await window.electron.loadCollections();
-  let collection = collections[0];
-  
-  if (!collection) {
-    collection = {
-      id: Date.now().toString(),
-      name: 'My Requests',
-      folders: [],
-      requests: [],
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
+  // Use a default name based on method and URL
+  try {
+    const url = new URL(request.url);
+    const urlPath = url.pathname.split('/').filter(p => p).join('_') || url.hostname.replace(/\./g, '_');
+    request.name = `${request.method}_${urlPath}`;
+  } catch {
+    // If URL is invalid, just use method and timestamp
+    request.name = `${request.method}_${Date.now()}`;
   }
   
-  collection.requests.push(request);
-  await window.electron.saveCollection(collection);
-  
-  alert('Request saved!');
+  try {
+    await window.electron.exportRequest(request);
+  } catch (error) {
+    console.error('Failed to export request:', error);
+  }
+});
+
+// Load Request
+loadRequestBtn?.addEventListener('click', async () => {
+  try {
+    const request = await window.electron.importRequest();
+    
+    if (!request) {
+      return; // User cancelled or file was invalid
+    }
+    
+    // Populate URL
+    urlInput.value = request.url;
+    
+    // Set method
+    if (isHttpMethod(request.method)) {
+      currentMethod = request.method;
+      updateMethodButton();
+    }
+    
+    // Populate query params
+    queryParams = request.queryParams || [];
+    renderParams();
+    
+    // Populate headers
+    headers = request.headers || [];
+    renderHeaders();
+    
+    // Populate body
+    if (request.body) {
+      bodyTypeSelect.value = request.body.type;
+      bodyTypeSelect.dispatchEvent(new Event('change'));
+      
+      switch (request.body.type) {
+        case 'raw':
+        case 'x-www-form-urlencoded':
+          bodyRawTextarea.value = request.body.raw || '';
+          break;
+        case 'json':
+          bodyJsonTextarea.value = typeof request.body.json === 'string' 
+            ? request.body.json 
+            : JSON.stringify(request.body.json, null, 2);
+          break;
+        case 'form-data':
+          formFields = request.body.formData || [];
+          renderFormFields();
+          break;
+      }
+    } else {
+      bodyTypeSelect.value = 'none';
+      bodyTypeSelect.dispatchEvent(new Event('change'));
+    }
+    
+    // Populate auth
+    if (request.auth) {
+      authTypeSelect.value = request.auth.type;
+      authTypeSelect.dispatchEvent(new Event('change'));
+      
+      switch (request.auth.type) {
+        case 'basic':
+          if (request.auth.basic) {
+            (document.getElementById('auth-basic-username') as HTMLInputElement).value = request.auth.basic.username || '';
+            (document.getElementById('auth-basic-password') as HTMLInputElement).value = request.auth.basic.password || '';
+          }
+          break;
+        case 'bearer':
+          if (request.auth.bearer) {
+            (document.getElementById('auth-bearer-token') as HTMLInputElement).value = request.auth.bearer.token || '';
+          }
+          break;
+        case 'api-key':
+          if (request.auth.apiKey) {
+            (document.getElementById('auth-apikey-key') as HTMLInputElement).value = request.auth.apiKey.key || '';
+            (document.getElementById('auth-apikey-value') as HTMLInputElement).value = request.auth.apiKey.value || '';
+            (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value = request.auth.apiKey.addTo || 'header';
+          }
+          break;
+      }
+    } else {
+      authTypeSelect.value = 'none';
+      authTypeSelect.dispatchEvent(new Event('change'));
+    }
+    
+  } catch (error) {
+    console.error('Failed to load request:', error);
+  }
 });
 
 // View History
@@ -1602,6 +1735,7 @@ switchTab('params');
           <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL">
           <button id="fetch" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-semibold">Send</button>
           <button id="save-request" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">Save</button>
+          <button id="load-request" class="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded">Load</button>
           <button id="view-history" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded">History</button>
         </div>
         
