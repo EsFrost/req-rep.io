@@ -7,20 +7,21 @@
 @layer components {
   #result {
     overflow: auto !important;
-    max-width: 100%;
   }
   
   #result pre {
     margin: 0 !important;
     background: transparent !important;
-    width: max-content !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
   }
   
   #result code {
     display: block !important;
     padding: 1rem !important;
-    white-space: pre !important;
-    overflow-wrap: normal !important;
-    word-break: normal !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
   }
 }
