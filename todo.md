@@ -18,8 +18,11 @@
 - Add dark mode
 - Add light mode
 - Add system mode
+
 - Fix any missing UI elements
 - Fix any UI elements that are not working / bugging
+
+- Can't use the url input after closing a tab
 
 ## Website :
 

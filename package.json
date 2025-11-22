@@ -1,6 +1,6 @@
 {
   "name": "reqio-electron",
-  "version": "1.0.0",
+  "version": "0.0.1a",
   "description": "App to test API endpoints using curl and electron",
   "license": "ISC",
   "author": "Sigmund Frost",
@@ -15,16 +15,33 @@
     "watch:ts": "tsc --watch",
     "build:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron",
     "watch:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dist": "electron-builder"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "electron": "^39.2.2",
+    "electron-builder": "^26.0.12",
     "esbuild": "^0.24.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.7.2"
   },
   "dependencies": {
     "highlight.js": "^11.9.0"
+  },
+  "build": {
+    "appId": "com.reqrep.io",
+    "productName": "Req-Rep.io",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64", "ia32", "arm64"]
+        }
+      ]
+    }
   }
 }

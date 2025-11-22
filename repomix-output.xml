@@ -559,6 +559,10 @@ node_modules
 /node_modules
 *node_modules/*
 
+release
+/release
+*release/*
+
 styles.css
 
 dist
@@ -728,37 +732,6 @@ export interface IpcChannels {
 }
 </file>
 
-<file path="todo.md">
-# TODO
-
-## documentation :
-
-- Once everything is finished, create a documentation file
-- Explain in detail the GUI and how it works
-- Explain in detail the functionality
-- Explain in detail every file
-
-## functionality :
-
-- Add support for cookies
-- Add support for ogranizing folders / projects
-- Options for projects / collections, eg : {{baseUrl}}
-
-## UI :
-
-- Add dark mode
-- Add light mode
-- Add system mode
-- Fix any missing UI elements
-- Fix any UI elements that are not working / bugging
-
-## Website :
-
-- Create a branch for the website
-- Create a website for the app
-- Locally create the website files in a different folder to avoid conflicts and confusion
-</file>
-
 <file path="readme.md">
 # Req-Rep.io
 
@@ -856,6 +829,40 @@ contextBridge.exposeInMainWorld('electron', {
     overflow-wrap: break-word !important;
   }
 }
+</file>
+
+<file path="todo.md">
+# TODO
+
+## documentation :
+
+- Once everything is finished, create a documentation file
+- Explain in detail the GUI and how it works
+- Explain in detail the functionality
+- Explain in detail every file
+
+## functionality :
+
+- Add support for cookies
+- Add support for ogranizing folders / projects
+- Options for projects / collections, eg : {{baseUrl}}
+
+## UI :
+
+- Add dark mode
+- Add light mode
+- Add system mode
+
+- Fix any missing UI elements
+- Fix any UI elements that are not working / bugging
+
+- Can't use the url input after closing a tab
+
+## Website :
+
+- Create a branch for the website
+- Create a website for the app
+- Locally create the website files in a different folder to avoid conflicts and confusion
 </file>
 
 <file path="src/main/ipc/handlers.ts">
@@ -974,7 +981,7 @@ export const registerHandlers = (): void => {
 <file path="package.json">
 {
   "name": "reqio-electron",
-  "version": "1.0.0",
+  "version": "0.0.1a",
   "description": "App to test API endpoints using curl and electron",
   "license": "ISC",
   "author": "Sigmund Frost",
@@ -989,17 +996,34 @@ export const registerHandlers = (): void => {
     "watch:ts": "tsc --watch",
     "build:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron",
     "watch:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=esm --external:electron --watch",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dist": "electron-builder"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "electron": "^39.2.2",
+    "electron-builder": "^26.0.12",
     "esbuild": "^0.24.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.7.2"
   },
   "dependencies": {
     "highlight.js": "^11.9.0"
+  },
+  "build": {
+    "appId": "com.reqrep.io",
+    "productName": "Req-Rep.io",
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64", "ia32", "arm64"]
+        }
+      ]
+    }
   }
 }
 </file>
