@@ -10,8 +10,7 @@
 ## functionality :
 
 - Add support for cookies
-- Add support for ogranizing folders / projects
-- Options for projects / collections, eg : {{baseUrl}}
+- Secure tokens
 
 ## UI :
 
@@ -23,6 +22,7 @@
 - Fix any UI elements that are not working / bugging
 
 - Can't use the url input after closing a tab
+- Icons are squeezed
 
 ## Website :
 

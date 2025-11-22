@@ -51,6 +51,7 @@ src/main/ipc/request-handler.ts
 src/main/storage/collections.ts
 src/main/storage/environments.ts
 src/main/storage/history.ts
+src/main/storage/projects.ts
 src/main/window.ts
 src/preload/index.ts
 src/renderer/components/EnvironmentSelector.ts
@@ -58,6 +59,18 @@ src/renderer/components/RequestBuilder.ts
 src/renderer/components/ResponseViewer.ts
 src/renderer/components/Sidebar.ts
 src/renderer/components/TabsManager.ts
+src/renderer/helpers/breadcrumbs.ts
+src/renderer/helpers/folder-tree.ts
+src/renderer/helpers/key-value-renderer.ts
+src/renderer/helpers/project-manager.ts
+src/renderer/helpers/project-renderer.ts
+src/renderer/helpers/request-builder.ts
+src/renderer/helpers/request-context.ts
+src/renderer/helpers/request-loader.ts
+src/renderer/helpers/response-handler.ts
+src/renderer/helpers/sidebar-renderer.ts
+src/renderer/helpers/tab-manager.ts
+src/renderer/helpers/variable-replacer.ts
 src/renderer/index.ts
 src/renderer/services/api.ts
 src/renderer/services/storage.ts
@@ -95,6 +108,1036 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+</file>
+
+<file path="src/main/storage/projects.ts">
+import { app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Project } from '../../shared/types';
+
+export class ProjectStorage {
+  private storagePath: string;
+  
+  constructor() {
+    const userDataPath = app.getPath('userData');
+    this.storagePath = path.join(userDataPath, 'projects.json');
+    this.ensureStorageFile();
+  }
+  
+  private ensureStorageFile(): void {
+    if (!fs.existsSync(this.storagePath)) {
+      fs.writeFileSync(this.storagePath, JSON.stringify([]));
+    }
+  }
+  
+  loadAll(): Project[] {
+    try {
+      const data = fs.readFileSync(this.storagePath, 'utf-8');
+      return JSON.parse(data);
+    } catch {
+      return [];
+    }
+  }
+  
+  save(project: Project): void {
+    const projects = this.loadAll();
+    const index = projects.findIndex(p => p.id === project.id);
+    
+    if (index >= 0) {
+      projects[index] = { ...project, updatedAt: Date.now() };
+    } else {
+      projects.push(project);
+    }
+    
+    fs.writeFileSync(this.storagePath, JSON.stringify(projects, null, 2));
+  }
+  
+  delete(id: string): void {
+    const projects = this.loadAll().filter(p => p.id !== id);
+    fs.writeFileSync(this.storagePath, JSON.stringify(projects, null, 2));
+  }
+  
+  get(id: string): Project | null {
+    const projects = this.loadAll();
+    return projects.find(p => p.id === id) || null;
+  }
+}
+</file>
+
+<file path="src/renderer/helpers/breadcrumbs.ts">
+import { Project, Folder } from '../../shared/types';
+import { findFolder } from './project-manager';
+
+export interface BreadcrumbItem {
+  id: string;
+  name: string;
+  type: 'project' | 'folder';
+}
+
+export function getBreadcrumbs(
+  project: Project | null,
+  folderId?: string
+): BreadcrumbItem[] {
+  const breadcrumbs: BreadcrumbItem[] = [];
+  
+  if (!project) {
+    return breadcrumbs;
+  }
+  
+  breadcrumbs.push({
+    id: project.id,
+    name: project.name,
+    type: 'project'
+  });
+  
+  if (folderId) {
+    const folder = findFolder(project.folders, folderId);
+    if (folder) {
+      // Build path from root to this folder
+      const path = getFolderPath(project.folders, folderId);
+      path.forEach(f => {
+        breadcrumbs.push({
+          id: f.id,
+          name: f.name,
+          type: 'folder'
+        });
+      });
+    }
+  }
+  
+  return breadcrumbs;
+}
+
+function getFolderPath(folders: Folder[], targetId: string, currentPath: Folder[] = []): Folder[] {
+  for (const folder of folders) {
+    if (folder.id === targetId) {
+      return [...currentPath, folder];
+    }
+    
+    const found = getFolderPath(folder.subfolders, targetId, [...currentPath, folder]);
+    if (found.length > 0 && found[found.length - 1].id === targetId) {
+      return found;
+    }
+  }
+  
+  return [];
+}
+
+export function renderBreadcrumbs(
+  container: HTMLElement,
+  breadcrumbs: BreadcrumbItem[]
+): void {
+  container.innerHTML = '';
+  
+  if (breadcrumbs.length === 0) {
+    container.innerHTML = '<span class="text-gray-500 text-sm">No Project</span>';
+    return;
+  }
+  
+  breadcrumbs.forEach((item, index) => {
+    const breadcrumb = document.createElement('span');
+    breadcrumb.className = 'text-sm';
+    
+    if (index > 0) {
+      const separator = document.createElement('span');
+      separator.className = 'text-gray-500 mx-2';
+      separator.textContent = '/';
+      container.appendChild(separator);
+    }
+    
+    breadcrumb.textContent = item.name;
+    breadcrumb.className = index === breadcrumbs.length - 1 
+      ? 'text-white text-sm font-semibold' 
+      : 'text-blue-400 text-sm cursor-pointer hover:underline';
+    
+    container.appendChild(breadcrumb);
+  });
+}
+</file>
+
+<file path="src/renderer/helpers/folder-tree.ts">
+import { Folder } from '../../shared/types';
+
+export function renderFolderTree(
+  container: HTMLElement,
+  folders: Folder[],
+  onSelect: (folderId: string) => void,
+  depth: number = 0
+): void {
+  folders.forEach(folder => {
+    const folderBtn = document.createElement('button');
+    folderBtn.className = 'w-full bg-gray-800 hover:bg-gray-700 p-2 rounded mb-1 text-left flex items-center gap-2';
+    folderBtn.style.marginLeft = `${depth * 20}px`;
+    
+    const icon = document.createElement('span');
+    icon.textContent = '📁';
+    
+    const name = document.createElement('span');
+    name.textContent = folder.name;
+    name.className = 'text-sm';
+    
+    folderBtn.appendChild(icon);
+    folderBtn.appendChild(name);
+    
+    folderBtn.onclick = () => onSelect(folder.id);
+    
+    container.appendChild(folderBtn);
+    
+    // Render subfolders
+    if (folder.subfolders.length > 0) {
+      renderFolderTree(container, folder.subfolders, onSelect, depth + 1);
+    }
+  });
+}
+</file>
+
+<file path="src/renderer/helpers/key-value-renderer.ts">
+import { KeyValue } from '../../shared/types';
+
+export function createKeyValueRow(
+  key: string = '',
+  value: string = '',
+  enabled: boolean = true,
+  onDelete: () => void,
+  onChange?: () => void
+): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'flex gap-2 items-center mb-2';
+  
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = enabled;
+  checkbox.className = 'w-5 h-5';
+  if (onChange) {
+    checkbox.addEventListener('change', onChange);
+  }
+  
+  const keyInput = document.createElement('input');
+  keyInput.type = 'text';
+  keyInput.value = key;
+  keyInput.placeholder = 'Key';
+  keyInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
+  if (onChange) {
+    keyInput.addEventListener('input', onChange);
+  }
+  
+  const valueInput = document.createElement('input');
+  valueInput.type = 'text';
+  valueInput.value = value;
+  valueInput.placeholder = 'Value';
+  valueInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
+  if (onChange) {
+    valueInput.addEventListener('input', onChange);
+  }
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '×';
+  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-xl font-bold';
+  deleteBtn.onclick = onDelete;
+  
+  row.appendChild(checkbox);
+  row.appendChild(keyInput);
+  row.appendChild(valueInput);
+  row.appendChild(deleteBtn);
+  
+  return row;
+}
+
+export function renderKeyValueList(
+  container: HTMLDivElement,
+  items: KeyValue[],
+  onUpdate: () => void
+): void {
+  container.innerHTML = '';
+  items.forEach((item, index) => {
+    const row = createKeyValueRow(item.key, item.value, item.enabled, () => {
+      items.splice(index, 1);
+      renderKeyValueList(container, items, onUpdate);
+      onUpdate();
+    }, onUpdate);
+    container.appendChild(row);
+  });
+}
+
+export function addKeyValue(
+  items: KeyValue[],
+  container: HTMLDivElement,
+  onUpdate: () => void
+): void {
+  items.push({ key: '', value: '', enabled: true });
+  renderKeyValueList(container, items, onUpdate);
+}
+</file>
+
+<file path="src/renderer/helpers/project-manager.ts">
+import { Project, Folder, Request } from '../../shared/types';
+
+export function findFolder(folders: Folder[], folderId: string): Folder | null {
+  for (const folder of folders) {
+    if (folder.id === folderId) return folder;
+    const found = findFolder(folder.subfolders, folderId);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function deleteFolder(project: Project, folderId: string): void {
+  const removeFolder = (folders: Folder[]): Folder[] => {
+    return folders.filter(f => {
+      if (f.id === folderId) return false;
+      f.subfolders = removeFolder(f.subfolders);
+      return true;
+    });
+  };
+  
+  project.folders = removeFolder(project.folders);
+}
+
+export function deleteRequest(project: Project, requestId: string): void {
+  project.requests = project.requests.filter(r => r.id !== requestId);
+  
+  const removeFromFolders = (folders: Folder[]) => {
+    folders.forEach(folder => {
+      folder.requests = folder.requests.filter(r => r.id !== requestId);
+      removeFromFolders(folder.subfolders);
+    });
+  };
+  
+  removeFromFolders(project.folders);
+}
+
+export function createFolder(
+  name: string,
+  projectId: string,
+  parentId?: string
+): Folder {
+  return {
+    id: Date.now().toString(),
+    name,
+    parentId,
+    projectId,
+    requests: [],
+    subfolders: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
+export function createRequest(projectId: string, folderId?: string): Request {
+  return {
+    id: Date.now().toString(),
+    name: 'Untitled Request',
+    method: 'GET',
+    url: '',
+    headers: [],
+    queryParams: [],
+    projectId,
+    folderId,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+
+export function addFolderToProject(
+  project: Project,
+  folder: Folder,
+  parentId?: string
+): void {
+  if (parentId) {
+    const parentFolder = findFolder(project.folders, parentId);
+    if (parentFolder) {
+      parentFolder.subfolders.push(folder);
+    }
+  } else {
+    project.folders.push(folder);
+  }
+}
+
+export function addRequestToProject(
+  project: Project,
+  request: Request,
+  folderId?: string
+): void {
+  if (folderId) {
+    const folder = findFolder(project.folders, folderId);
+    if (folder) {
+      folder.requests.push(request);
+    }
+  } else {
+    project.requests.push(request);
+  }
+}
+</file>
+
+<file path="src/renderer/helpers/project-renderer.ts">
+import { Project } from '../../shared/types';
+
+export interface ProjectCallbacks {
+  onLoadProject: (projectId: string) => void;
+  onEditProject: (project: Project) => void;
+  onExportProject: (project: Project) => void;
+  onDeleteProject: (projectId: string) => void;
+}
+
+export function renderProjectList(
+  container: HTMLDivElement,
+  projects: Project[],
+  callbacks: ProjectCallbacks
+): void {
+  container.innerHTML = '';
+  
+  if (projects.length === 0) {
+    container.innerHTML = '<div class="text-gray-400 text-center py-8">No projects yet. Create one to get started!</div>';
+    return;
+  }
+  
+  projects.forEach(project => {
+    const projectCard = document.createElement('div');
+    projectCard.className = 'bg-gray-800 p-4 rounded mb-3 hover:bg-gray-750 cursor-pointer';
+    
+    projectCard.innerHTML = `
+      <div class="flex justify-between items-start mb-2">
+        <div class="flex-1">
+          <h3 class="text-lg font-semibold text-white mb-1">${project.name}</h3>
+          ${project.description ? `<p class="text-sm text-gray-400 mb-2">${project.description}</p>` : ''}
+          ${project.baseUrl ? `<p class="text-xs text-blue-400">Base URL: ${project.baseUrl}</p>` : ''}
+        </div>
+        <div class="flex gap-2">
+          <button class="edit-project bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">Edit</button>
+          <button class="export-project bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm">Export</button>
+          <button class="delete-project bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm">Delete</button>
+        </div>
+      </div>
+      <div class="text-xs text-gray-500">
+        ${project.folders.length} folder(s), ${project.requests.length} request(s)
+      </div>
+    `;
+    
+    projectCard.onclick = (e) => {
+      if (!(e.target as HTMLElement).classList.contains('edit-project') && 
+          !(e.target as HTMLElement).classList.contains('delete-project') &&
+          !(e.target as HTMLElement).classList.contains('export-project')) {
+        callbacks.onLoadProject(project.id);
+      }
+    };
+    
+    projectCard.querySelector('.edit-project')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      callbacks.onEditProject(project);
+    });
+    
+    projectCard.querySelector('.export-project')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      callbacks.onExportProject(project);
+    });
+    
+    projectCard.querySelector('.delete-project')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      callbacks.onDeleteProject(project.id);
+    });
+    
+    container.appendChild(projectCard);
+  });
+}
+</file>
+
+<file path="src/renderer/helpers/request-builder.ts">
+import { Request, HttpMethod, KeyValue, BodyType, AuthType } from '../../shared/types';
+
+export const methodColors: Record<HttpMethod, string> = {
+  'GET': 'text-green-600',
+  'POST': 'text-yellow-600',
+  'PUT': 'text-blue-600',
+  'PATCH': 'text-pink-600',
+  'DELETE': 'text-red-600',
+  'HEAD': 'text-green-400',
+  'OPTIONS': 'text-purple-600'
+};
+
+export function isHttpMethod(method: string): method is HttpMethod {
+  return ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method);
+}
+
+export function buildRequest(
+  currentMethod: HttpMethod,
+  urlInput: HTMLInputElement,
+  paramsContainer: HTMLDivElement,
+  headersContainer: HTMLDivElement,
+  bodyTypeSelect: HTMLSelectElement,
+  bodyRawTextarea: HTMLTextAreaElement,
+  bodyJsonTextarea: HTMLTextAreaElement,
+  bodyFormDataContainer: HTMLDivElement,
+  authTypeSelect: HTMLSelectElement,
+  projectId?: string
+): Request {
+  // Get query params from inputs
+  const paramRows = paramsContainer.querySelectorAll('.flex');
+  const currentParams: KeyValue[] = [];
+  paramRows.forEach(row => {
+    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
+    currentParams.push({
+      key: inputs[0].value,
+      value: inputs[1].value,
+      enabled: checkbox.checked
+    });
+  });
+  
+  // Get headers from inputs
+  const headerRows = headersContainer.querySelectorAll('.flex');
+  const currentHeaders: KeyValue[] = [];
+  headerRows.forEach(row => {
+    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
+    currentHeaders.push({
+      key: inputs[0].value,
+      value: inputs[1].value,
+      enabled: checkbox.checked
+    });
+  });
+  
+  // Build body
+  const bodyType = bodyTypeSelect.value as BodyType;
+  let body: Request['body'];
+  
+  if (bodyType === 'none') {
+    body = undefined;
+  } else if (bodyType === 'raw' || bodyType === 'x-www-form-urlencoded') {
+    body = { type: bodyType, raw: bodyRawTextarea.value };
+  } else if (bodyType === 'json') {
+    body = { type: bodyType, json: bodyJsonTextarea.value };
+  } else if (bodyType === 'form-data') {
+    const formRows = bodyFormDataContainer.querySelectorAll('.flex');
+    const formData: KeyValue[] = [];
+    formRows.forEach(row => {
+      const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
+      formData.push({
+        key: inputs[0].value,
+        value: inputs[1].value,
+        enabled: checkbox.checked
+      });
+    });
+    body = { type: bodyType, formData };
+  }
+  
+  // Build auth
+  const authType = authTypeSelect.value as AuthType;
+  let auth: Request['auth'];
+  
+  if (authType === 'none') {
+    auth = undefined;
+  } else if (authType === 'basic') {
+    const username = (document.getElementById('auth-basic-username') as HTMLInputElement).value;
+    const password = (document.getElementById('auth-basic-password') as HTMLInputElement).value;
+    auth = { type: authType, basic: { username, password } };
+  } else if (authType === 'bearer') {
+    const token = (document.getElementById('auth-bearer-token') as HTMLInputElement).value;
+    auth = { type: authType, bearer: { token } };
+  } else if (authType === 'api-key') {
+    const key = (document.getElementById('auth-apikey-key') as HTMLInputElement).value;
+    const value = (document.getElementById('auth-apikey-value') as HTMLInputElement).value;
+    const addTo = (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value as 'header' | 'query';
+    auth = { type: authType, apiKey: { key, value, addTo } };
+  }
+  
+  return {
+    id: Date.now().toString(),
+    name: 'Untitled Request',
+    method: currentMethod,
+    url: urlInput.value,
+    headers: currentHeaders,
+    body,
+    auth,
+    queryParams: currentParams,
+    projectId,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+}
+</file>
+
+<file path="src/renderer/helpers/request-context.ts">
+import { Request, Project } from '../../shared/types';
+import { findFolder, addRequestToProject } from './project-manager';
+
+export interface RequestContext {
+  request: Request;
+  projectId?: string;
+  folderId?: string;
+  isInProject: boolean;
+}
+
+export function getRequestContext(request: Request): RequestContext {
+  return {
+    request,
+    projectId: request.projectId,
+    folderId: request.folderId,
+    isInProject: !!request.projectId
+  };
+}
+
+export function saveRequestToProject(
+  request: Request,
+  project: Project,
+  folderId?: string
+): void {
+  // Remove request from old location if it exists
+  if (request.folderId) {
+    const oldFolder = findFolder(project.folders, request.folderId);
+    if (oldFolder) {
+      oldFolder.requests = oldFolder.requests.filter(r => r.id !== request.id);
+    }
+  } else {
+    project.requests = project.requests.filter(r => r.id !== request.id);
+  }
+  
+  // Update request context
+  request.projectId = project.id;
+  request.folderId = folderId;
+  
+  // Add to new location
+  addRequestToProject(project, request, folderId);
+}
+
+export function updateRequestInProject(
+  request: Request,
+  project: Project
+): void {
+  if (request.folderId) {
+    const folder = findFolder(project.folders, request.folderId);
+    if (folder) {
+      const index = folder.requests.findIndex(r => r.id === request.id);
+      if (index >= 0) {
+        folder.requests[index] = request;
+      }
+    }
+  } else {
+    const index = project.requests.findIndex(r => r.id === request.id);
+    if (index >= 0) {
+      project.requests[index] = request;
+    }
+  }
+}
+</file>
+
+<file path="src/renderer/helpers/response-handler.ts">
+import hljs from 'highlight.js';
+import { HttpResponse } from '../../shared/types';
+
+export type DisplayFormat = 'raw' | 'json' | 'html' | 'xml';
+
+export const getStatusText = (code: number): string => {
+  const statusTexts: Record<number, string> = {
+    200: 'OK', 201: 'Created', 204: 'No Content',
+    301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
+    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+    404: 'Not Found', 405: 'Method Not Allowed',
+    500: 'Internal Server Error', 502: 'Bad Gateway',
+    503: 'Service Unavailable', 504: 'Gateway Timeout'
+  };
+  return statusTexts[code] || 'Unknown';
+};
+
+export const detectLanguage = (data: string): string => {
+  const trimmed = data.trim();
+  
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      JSON.parse(trimmed);
+      return 'json';
+    } catch {}
+  }
+  
+  if (trimmed.startsWith('<?xml') || 
+      (trimmed.startsWith('<') && trimmed.includes('</') && trimmed.endsWith('>'))) {
+    return 'xml';
+  }
+  
+  if (trimmed.toLowerCase().includes('<!doctype html') || 
+      trimmed.toLowerCase().includes('<html')) {
+    return 'html';
+  }
+  
+  return 'plaintext';
+};
+
+export const displayResponse = (
+  response: HttpResponse,
+  currentFormat: DisplayFormat,
+  resultDiv: HTMLDivElement,
+  statusCodeSpan: HTMLSpanElement,
+  responseTimeSpan: HTMLSpanElement,
+  responseSizeSpan: HTMLSpanElement
+): void => {
+  resultDiv.innerHTML = '';
+  
+  const codeBlock = document.createElement('pre');
+  codeBlock.style.margin = '0';
+  codeBlock.style.width = '100%';
+  codeBlock.style.overflow = 'visible';
+  
+  const codeElement = document.createElement('code');
+  codeElement.style.display = 'block';
+  codeElement.style.padding = '1rem';
+  codeElement.style.whiteSpace = 'pre';
+  codeElement.style.overflowWrap = 'normal';
+  codeElement.style.wordBreak = 'normal';
+  
+  const data = response.body;
+  
+  switch (currentFormat) {
+    case 'raw':
+      const detectedLang = detectLanguage(data);
+      codeElement.className = `language-${detectedLang}`;
+      codeElement.textContent = data;
+      break;
+      
+    case 'json':
+      try {
+        const parsed = JSON.parse(data);
+        const formatted = JSON.stringify(parsed, null, 2);
+        codeElement.className = 'language-json';
+        codeElement.textContent = formatted;
+      } catch {
+        codeElement.className = 'language-plaintext';
+        codeElement.textContent = 'Invalid JSON: ' + data;
+      }
+      break;
+      
+    case 'html':
+      codeElement.className = 'language-html';
+      codeElement.textContent = data;
+      break;
+      
+    case 'xml':
+      codeElement.className = 'language-xml';
+      codeElement.textContent = data;
+      break;
+  }
+  
+  codeBlock.appendChild(codeElement);
+  resultDiv.appendChild(codeBlock);
+  hljs.highlightElement(codeElement);
+  
+  statusCodeSpan.textContent = `${response.status} ${response.statusText}`;
+  statusCodeSpan.className = response.status >= 200 && response.status < 300 
+    ? 'text-green-400 font-semibold' 
+    : 'text-red-400 font-semibold';
+  
+  responseTimeSpan.textContent = `${response.time.toFixed(0)}ms`;
+  responseSizeSpan.textContent = `${(response.size / 1024).toFixed(2)}KB`;
+};
+</file>
+
+<file path="src/renderer/helpers/sidebar-renderer.ts">
+import { Project, Folder, Request } from '../../shared/types';
+import { methodColors } from './request-builder';
+
+export interface SidebarCallbacks {
+  onNewFolder: () => void;
+  onNewRequest: () => void;
+  onAddRequestToFolder: (folderId: string) => void;
+  onAddSubfolder: (parentId: string) => void;
+  onDeleteFolder: (folderId: string) => void;
+  onDeleteRequest: (requestId: string) => void;
+  onLoadRequest: (request: Request) => void;
+}
+
+export function renderSidebar(
+  container: HTMLDivElement,
+  project: Project | null,
+  callbacks: SidebarCallbacks
+): void {
+  container.innerHTML = '';
+  
+  if (!project) {
+    container.innerHTML = '<div class="text-gray-400 text-center py-4 text-sm">Select a project to view its contents</div>';
+    return;
+  }
+  
+  // Add New Folder Button
+  const newFolderBtn = document.createElement('button');
+  newFolderBtn.className = 'w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded mb-4 text-sm';
+  newFolderBtn.textContent = '+ New Folder';
+  newFolderBtn.onclick = callbacks.onNewFolder;
+  container.appendChild(newFolderBtn);
+  
+  // Add New Request Button
+  const newRequestBtn = document.createElement('button');
+  newRequestBtn.className = 'w-full bg-green-600 hover:bg-green-700 px-3 py-2 rounded mb-4 text-sm';
+  newRequestBtn.textContent = '+ New Request';
+  newRequestBtn.onclick = callbacks.onNewRequest;
+  container.appendChild(newRequestBtn);
+  
+  // Render folders
+  project.folders.forEach(folder => {
+    renderFolder(folder, container, 0, callbacks);
+  });
+  
+  // Render root requests
+  project.requests.forEach(request => {
+    renderRequest(request, container, 0, callbacks);
+  });
+}
+
+function renderFolder(
+  folder: Folder,
+  container: HTMLElement,
+  depth: number,
+  callbacks: SidebarCallbacks
+): void {
+  const folderDiv = document.createElement('div');
+  folderDiv.className = 'mb-2';
+  folderDiv.style.marginLeft = `${depth * 20}px`;
+  
+  const folderHeader = document.createElement('div');
+  folderHeader.className = 'flex items-center justify-between bg-gray-800 p-2 rounded cursor-pointer hover:bg-gray-750';
+  
+  const folderName = document.createElement('div');
+  folderName.className = 'flex items-center gap-2';
+  folderName.innerHTML = `<span>📁</span><span class="text-sm">${folder.name}</span>`;
+  
+  const folderActions = document.createElement('div');
+  folderActions.className = 'flex gap-1';
+  
+  const addRequestBtn = document.createElement('button');
+  addRequestBtn.textContent = '+';
+  addRequestBtn.className = 'bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs';
+  addRequestBtn.onclick = (e) => {
+    e.stopPropagation();
+    callbacks.onAddRequestToFolder(folder.id);
+  };
+  
+  const addSubfolderBtn = document.createElement('button');
+  addSubfolderBtn.textContent = '📁';
+  addSubfolderBtn.className = 'bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs';
+  addSubfolderBtn.onclick = (e) => {
+    e.stopPropagation();
+    callbacks.onAddSubfolder(folder.id);
+  };
+  
+  const deleteFolderBtn = document.createElement('button');
+  deleteFolderBtn.textContent = '×';
+  deleteFolderBtn.className = 'bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs';
+  deleteFolderBtn.onclick = (e) => {
+    e.stopPropagation();
+    callbacks.onDeleteFolder(folder.id);
+  };
+  
+  folderActions.appendChild(addRequestBtn);
+  folderActions.appendChild(addSubfolderBtn);
+  folderActions.appendChild(deleteFolderBtn);
+  
+  folderHeader.appendChild(folderName);
+  folderHeader.appendChild(folderActions);
+  folderDiv.appendChild(folderHeader);
+  
+  const folderContent = document.createElement('div');
+  folderContent.className = 'ml-4 mt-1';
+  
+  folder.subfolders.forEach(subfolder => {
+    renderFolder(subfolder, folderContent, depth + 1, callbacks);
+  });
+  
+  folder.requests.forEach(request => {
+    renderRequest(request, folderContent, depth + 1, callbacks);
+  });
+  
+  folderDiv.appendChild(folderContent);
+  container.appendChild(folderDiv);
+}
+
+function renderRequest(
+  request: Request,
+  container: HTMLElement,
+  depth: number,
+  callbacks: SidebarCallbacks
+): void {
+  const requestDiv = document.createElement('div');
+  requestDiv.className = 'bg-gray-800 p-2 rounded mb-1 cursor-pointer hover:bg-gray-750 flex items-center justify-between';
+  requestDiv.style.marginLeft = `${depth * 20}px`;
+  
+  const methodColor = methodColors[request.method] || 'text-gray-400';
+  
+  const requestInfo = document.createElement('div');
+  requestInfo.className = 'flex items-center gap-2 flex-1';
+  requestInfo.innerHTML = `
+    <span class="font-semibold ${methodColor} text-xs">${request.method}</span>
+    <span class="text-sm text-gray-300">${request.name}</span>
+  `;
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '×';
+  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs';
+  deleteBtn.onclick = (e) => {
+    e.stopPropagation();
+    callbacks.onDeleteRequest(request.id);
+  };
+  
+  requestDiv.onclick = () => {
+    callbacks.onLoadRequest(request);
+  };
+  
+  requestDiv.appendChild(requestInfo);
+  requestDiv.appendChild(deleteBtn);
+  container.appendChild(requestDiv);
+}
+</file>
+
+<file path="src/renderer/helpers/tab-manager.ts">
+import { Request, HttpResponse, HttpMethod } from '../../shared/types';
+
+export interface Tab {
+  id: string;
+  name: string;
+  request: Request;
+  response: HttpResponse | null;
+}
+
+export class TabManager {
+  private tabs: Tab[] = [];
+  private activeTabId: string = '';
+  private tabsContainer: HTMLDivElement;
+  private onTabChange: (tabId: string) => void;
+
+  constructor(tabsContainer: HTMLDivElement, onTabChange: (tabId: string) => void) {
+    this.tabsContainer = tabsContainer;
+    this.onTabChange = onTabChange;
+  }
+
+  createTab(request: Request): string {
+    const tab: Tab = {
+      id: Date.now().toString(),
+      name: 'New Request',
+      request,
+      response: null
+    };
+    
+    this.tabs.push(tab);
+    this.activeTabId = tab.id;
+    this.render();
+    return tab.id;
+  }
+
+  closeTab(tabId: string): void {
+    if (this.tabs.length === 1) return;
+    
+    const index = this.tabs.findIndex(t => t.id === tabId);
+    if (index === -1) return;
+    
+    this.tabs.splice(index, 1);
+    
+    if (this.activeTabId === tabId) {
+      this.activeTabId = this.tabs[Math.max(0, index - 1)].id;
+    }
+    
+    this.render();
+    this.onTabChange(this.activeTabId);
+  }
+
+  setActiveTab(tabId: string): void {
+    this.activeTabId = tabId;
+    this.render();
+    this.onTabChange(tabId);
+  }
+
+  getActiveTab(): Tab | null {
+    return this.tabs.find(t => t.id === this.activeTabId) || null;
+  }
+
+  updateActiveTab(request: Request, response: HttpResponse | null): void {
+    const tab = this.getActiveTab();
+    if (!tab) return;
+    
+    tab.request = request;
+    tab.response = response;
+    
+    // Update tab name based on URL
+    if (request.url) {
+      try {
+        const url = new URL(request.url);
+        const urlPath = url.pathname.split('/').filter(p => p).join('/') || url.hostname;
+        tab.name = `${request.method} ${urlPath.substring(0, 20)}${urlPath.length > 20 ? '...' : ''}`;
+      } catch {
+        tab.name = `${request.method} Request`;
+      }
+    } else {
+      tab.name = 'New Request';
+    }
+    
+    this.render();
+  }
+
+  getTabs(): Tab[] {
+    return this.tabs;
+  }
+
+  getActiveTabId(): string {
+    return this.activeTabId;
+  }
+
+  private render(): void {
+    this.tabsContainer.innerHTML = '';
+    
+    this.tabs.forEach(tab => {
+      const tabElement = document.createElement('div');
+      tabElement.className = `flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer ${
+        this.activeTabId === tab.id ? 'bg-gray-800 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-750'
+      }`;
+      
+      const tabName = document.createElement('span');
+      tabName.textContent = tab.name;
+      tabName.className = 'text-sm';
+      
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '×';
+      closeBtn.className = 'text-lg hover:text-red-400 ml-2';
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.closeTab(tab.id);
+      };
+      
+      tabElement.onclick = () => {
+        this.setActiveTab(tab.id);
+      };
+      
+      tabElement.appendChild(tabName);
+      if (this.tabs.length > 1) {
+        tabElement.appendChild(closeBtn);
+      }
+      
+      this.tabsContainer.appendChild(tabElement);
+    });
+  }
+}
+</file>
+
+<file path="src/renderer/helpers/variable-replacer.ts">
+import { Project } from '../../shared/types';
+
+export function replaceVariables(text: string, project: Project | null): string {
+  if (!project) return text;
+  
+  let result = text;
+  
+  // Replace {{baseUrl}}
+  if (project.baseUrl) {
+    result = result.replace(/\{\{baseUrl\}\}/g, project.baseUrl);
+  }
+  
+  // Replace custom variables
+  project.variables.forEach(variable => {
+    if (variable.enabled && variable.key) {
+      const regex = new RegExp(`\\{\\{${variable.key}\\}\\}`, 'g');
+      result = result.replace(regex, variable.value || '');
+    }
+  });
+  
+  return result;
+}
 </file>
 
 <file path="src/main/index.ts">
@@ -544,6 +1587,107 @@ export const createWindow = (): BrowserWindow => {
 };
 </file>
 
+<file path="src/renderer/helpers/request-loader.ts">
+import { Request, HttpMethod } from '../../shared/types';
+import { isHttpMethod } from './request-builder';
+
+export function loadRequestIntoUI(
+  request: Request,
+  elements: {
+    urlInput: HTMLInputElement;
+    paramsContainer: HTMLDivElement;
+    headersContainer: HTMLDivElement;
+    bodyTypeSelect: HTMLSelectElement;
+    bodyRawTextarea: HTMLTextAreaElement;
+    bodyJsonTextarea: HTMLTextAreaElement;
+    bodyFormDataContainer: HTMLDivElement;
+    authTypeSelect: HTMLSelectElement;
+  },
+  renderers: {
+    renderParams: () => void;
+    renderHeaders: () => void;
+    renderFormFields: () => void;
+  },
+  setters: {
+    setMethod: (method: HttpMethod) => void;
+    setQueryParams: (params: any[]) => void;
+    setHeaders: (headers: any[]) => void;
+    setFormFields: (fields: any[]) => void;
+  }
+): void {
+  // Populate URL
+  elements.urlInput.value = request.url || '';
+  
+  // Set method
+  if (request.method && isHttpMethod(request.method)) {
+    setters.setMethod(request.method);
+  }
+  
+  // Populate query params
+  setters.setQueryParams(request.queryParams || []);
+  renderers.renderParams();
+  
+  // Populate headers
+  setters.setHeaders(request.headers || []);
+  renderers.renderHeaders();
+  
+  // Populate body
+  if (request.body) {
+    elements.bodyTypeSelect.value = request.body.type;
+    elements.bodyTypeSelect.dispatchEvent(new Event('change'));
+    
+    switch (request.body.type) {
+      case 'raw':
+      case 'x-www-form-urlencoded':
+        elements.bodyRawTextarea.value = request.body.raw || '';
+        break;
+      case 'json':
+        elements.bodyJsonTextarea.value = typeof request.body.json === 'string' 
+          ? request.body.json 
+          : JSON.stringify(request.body.json, null, 2);
+        break;
+      case 'form-data':
+        setters.setFormFields(request.body.formData || []);
+        renderers.renderFormFields();
+        break;
+    }
+  } else {
+    elements.bodyTypeSelect.value = 'none';
+    elements.bodyTypeSelect.dispatchEvent(new Event('change'));
+  }
+  
+  // Populate auth
+  if (request.auth) {
+    elements.authTypeSelect.value = request.auth.type;
+    elements.authTypeSelect.dispatchEvent(new Event('change'));
+    
+    switch (request.auth.type) {
+      case 'basic':
+        if (request.auth.basic) {
+          (document.getElementById('auth-basic-username') as HTMLInputElement).value = request.auth.basic.username || '';
+          (document.getElementById('auth-basic-password') as HTMLInputElement).value = request.auth.basic.password || '';
+        }
+        break;
+      case 'bearer':
+        if (request.auth.bearer) {
+          (document.getElementById('auth-bearer-token') as HTMLInputElement).value = request.auth.bearer.token || '';
+        }
+        break;
+      case 'api-key':
+        if (request.auth.apiKey) {
+          (document.getElementById('auth-apikey-key') as HTMLInputElement).value = request.auth.apiKey.key || '';
+          (document.getElementById('auth-apikey-value') as HTMLInputElement).value = request.auth.apiKey.value || '';
+          (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value = request.auth.apiKey.addTo || 'header';
+        }
+        break;
+    }
+  } else {
+    elements.authTypeSelect.value = 'none';
+    elements.authTypeSelect.dispatchEvent(new Event('change'));
+  }
+}
+</file>
+
 <file path="tailwind.config.js">
 module.exports = {
   content: ["./*.html", "./dist/**/*.js"],
@@ -551,6 +1695,25 @@ module.exports = {
     extend: {},
   },
   plugins: [],
+}
+</file>
+
+<file path="tsconfig.renderer.json">
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true
+  },
+  "include": ["src/renderer/**/*", "src/shared/**/*"],
+  "exclude": ["node_modules"]
 }
 </file>
 
@@ -566,6 +1729,64 @@ release
 styles.css
 
 dist
+</file>
+
+<file path="readme.md">
+# Req-Rep.io
+
+## Req-Rep.io is a simple HTTP client for Windows, Linux and macOS.
+
+It was created using the Electron framework which I have worked with before and I find using it faster, easier and more enjoyable to develop with.
+
+## Why Req-Rep.io ?
+
+This is an open source project, feel free to fork, download, modify etc. You have absolute control over what is happening. It can be used as a base for a much more complex and complete project.
+
+### Why not Postman ?
+
+Req-Rep.io does not use any sort of accounts, does not collect any sort of data and is completely free, while maintaining similar functionality to Postman. If there are any features missing you can either add them yourself or suggest the change and I will try to implement it.
+
+### Why not curl ?
+
+In case you want an intuitive app with GUI since curl is a command line tool and you might not want to remember all the flags and options. On the other hand, as mentioned before, if any command or flag is missing, you can always add it yourself or request for it to be added.
+
+*I hope you find this project useful, intuitive, easy to use, easy to modify and instructive.*
+
+---
+
+If the final project's size is too large, please download the source code and build it yourself.
+
+Any and all suggestions are welcome.
+</file>
+
+<file path="src/styles/input.css">
+@import 'highlight.js/styles/atom-one-dark.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  #result {
+    overflow: auto !important;
+  }
+  
+  #result pre {
+    margin: 0 !important;
+    background: transparent !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+  
+  #result code {
+    display: block !important;
+    padding: 1rem !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+}
 </file>
 
 <file path="tsconfig.json">
@@ -587,23 +1808,57 @@ dist
 }
 </file>
 
-<file path="tsconfig.renderer.json">
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ES2020",
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true
-  },
-  "include": ["src/renderer/**/*", "src/shared/**/*"],
-  "exclude": ["node_modules"]
-}
+<file path="src/preload/index.ts">
+import { contextBridge, ipcRenderer } from 'electron';
+import { Request, HttpResponse, Collection, Environment, HistoryEntry, Project } from '../shared/types';
+
+contextBridge.exposeInMainWorld('electron', {
+  // Request
+  sendRequest: (request: Request): Promise<HttpResponse> => 
+    ipcRenderer.invoke('request:send', request),
+  
+  // Collections
+  saveCollection: (collection: Collection): Promise<void> => 
+    ipcRenderer.invoke('collection:save', collection),
+  loadCollections: (): Promise<Collection[]> => 
+    ipcRenderer.invoke('collection:load'),
+  deleteCollection: (id: string): Promise<void> => 
+    ipcRenderer.invoke('collection:delete', id),
+  
+  // Projects
+  saveProject: (project: Project): Promise<void> => 
+    ipcRenderer.invoke('project:save', project),
+  loadProjects: (): Promise<Project[]> => 
+    ipcRenderer.invoke('project:load'),
+  deleteProject: (id: string): Promise<void> => 
+    ipcRenderer.invoke('project:delete', id),
+  exportProject: (project: Project): Promise<void> => 
+    ipcRenderer.invoke('project:export', project),
+  importProject: (): Promise<Project | null> => 
+    ipcRenderer.invoke('project:import'),
+  
+  // Environments
+  saveEnvironment: (environment: Environment): Promise<void> => 
+    ipcRenderer.invoke('environment:save', environment),
+  loadEnvironments: (): Promise<Environment[]> => 
+    ipcRenderer.invoke('environment:load'),
+  deleteEnvironment: (id: string): Promise<void> => 
+    ipcRenderer.invoke('environment:delete', id),
+  setActiveEnvironment: (id: string): Promise<void> => 
+    ipcRenderer.invoke('environment:setActive', id),
+  
+  // History
+  getHistory: (limit?: number): Promise<HistoryEntry[]> => 
+    ipcRenderer.invoke('history:get', limit),
+  clearHistory: (): Promise<void> => 
+    ipcRenderer.invoke('history:clear'),
+  
+  // Export/Import Request
+  exportRequest: (request: Request): Promise<void> => 
+    ipcRenderer.invoke('request:export', request),
+  importRequest: (): Promise<Request | null> => 
+    ipcRenderer.invoke('request:import'),
+});
 </file>
 
 <file path="src/shared/types.ts">
@@ -652,7 +1907,8 @@ export interface Request {
   body?: RequestBody;
   auth?: Auth;
   queryParams: KeyValue[];
-  collectionId?: string;
+  folderId?: string;
+  projectId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -677,13 +1933,29 @@ export interface HttpResponse {
 export interface Folder {
   id: string;
   name: string;
+  parentId?: string;
+  projectId: string;
   requests: Request[];
   subfolders: Folder[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface Collection {
   id: string;
   name: string;
+  folders: Folder[];
+  requests: Request[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  baseUrl?: string;
+  variables: KeyValue[];
   folders: Folder[];
   requests: Request[];
   createdAt: number;
@@ -717,13 +1989,61 @@ export interface IpcChannels {
     args: [];
     return: Collection[];
   };
+  'collection:delete': {
+    args: [string];
+    return: void;
+  };
+  'project:save': {
+    args: [Project];
+    return: void;
+  };
+  'project:load': {
+    args: [];
+    return: Project[];
+  };
+  'project:delete': {
+    args: [string];
+    return: void;
+  };
+  'project:export': {
+    args: [Project];
+    return: void;
+  };
+  'project:import': {
+    args: [];
+    return: Project | null;
+  };
   'environment:save': {
     args: [Environment];
+    return: void;
+  };
+  'environment:load': {
+    args: [];
+    return: Environment[];
+  };
+  'environment:delete': {
+    args: [string];
+    return: void;
+  };
+  'environment:setActive': {
+    args: [string];
     return: void;
   };
   'history:get': {
     args: [number?];
     return: HistoryEntry[];
+  };
+  'history:clear': {
+    args: [];
+    return: void;
+  };
+  'request:export': {
+    args: [Request];
+    return: void;
+  };
+  'request:import': {
+    args: [];
+    return: Request | null;
   };
   'fetch-url': {
     args: [string];
@@ -732,152 +2052,21 @@ export interface IpcChannels {
 }
 </file>
 
-<file path="readme.md">
-# Req-Rep.io
-
-## Req-Rep.io is a simple HTTP client for Windows, Linux and macOS.
-
-It was created using the Electron framework which I have worked with before and I find using it faster, easier and more enjoyable to develop with.
-
-## Why Req-Rep.io ?
-
-This is an open source project, feel free to fork, download, modify etc. You have absolute control over what is happening. It can be used as a base for a much more complex and complete project.
-
-### Why not Postman ?
-
-Req-Rep.io does not use any sort of accounts, does not collect any sort of data and is completely free, while maintaining similar functionality to Postman. If there are any features missing you can either add them yourself or suggest the change and I will try to implement it.
-
-### Why not curl ?
-
-In case you want an intuitive app with GUI since curl is a command line tool and you might not want to remember all the flags and options. On the other hand, as mentioned before, if any command or flag is missing, you can always add it yourself or request for it to be added.
-
-*I hope you find this project useful, intuitive, easy to use, easy to modify and instructive.*
-
----
-
-If the final project's size is too large, please download the source code and build it yourself.
-
-Any and all suggestions are welcome.
-</file>
-
-<file path="src/preload/index.ts">
-import { contextBridge, ipcRenderer } from 'electron';
-import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../shared/types';
-
-contextBridge.exposeInMainWorld('electron', {
-  // Request
-  sendRequest: (request: Request): Promise<HttpResponse> => 
-    ipcRenderer.invoke('request:send', request),
-  
-  // Collections
-  saveCollection: (collection: Collection): Promise<void> => 
-    ipcRenderer.invoke('collection:save', collection),
-  loadCollections: (): Promise<Collection[]> => 
-    ipcRenderer.invoke('collection:load'),
-  deleteCollection: (id: string): Promise<void> => 
-    ipcRenderer.invoke('collection:delete', id),
-  
-  // Environments
-  saveEnvironment: (environment: Environment): Promise<void> => 
-    ipcRenderer.invoke('environment:save', environment),
-  loadEnvironments: (): Promise<Environment[]> => 
-    ipcRenderer.invoke('environment:load'),
-  deleteEnvironment: (id: string): Promise<void> => 
-    ipcRenderer.invoke('environment:delete', id),
-  setActiveEnvironment: (id: string): Promise<void> => 
-    ipcRenderer.invoke('environment:setActive', id),
-  
-  // History
-  getHistory: (limit?: number): Promise<HistoryEntry[]> => 
-    ipcRenderer.invoke('history:get', limit),
-  clearHistory: (): Promise<void> => 
-    ipcRenderer.invoke('history:clear'),
-  
-  // Export/Import Request
-  exportRequest: (request: Request): Promise<void> => 
-    ipcRenderer.invoke('request:export', request),
-  importRequest: (): Promise<Request | null> => 
-    ipcRenderer.invoke('request:import'),
-});
-</file>
-
-<file path="src/styles/input.css">
-@import 'highlight.js/styles/atom-one-dark.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer components {
-  #result {
-    overflow: auto !important;
-  }
-  
-  #result pre {
-    margin: 0 !important;
-    background: transparent !important;
-    white-space: pre-wrap !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-  }
-  
-  #result code {
-    display: block !important;
-    padding: 1rem !important;
-    white-space: pre-wrap !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-  }
-}
-</file>
-
-<file path="todo.md">
-# TODO
-
-## documentation :
-
-- Once everything is finished, create a documentation file
-- Explain in detail the GUI and how it works
-- Explain in detail the functionality
-- Explain in detail every file
-
-## functionality :
-
-- Add support for cookies
-- Add support for ogranizing folders / projects
-- Options for projects / collections, eg : {{baseUrl}}
-
-## UI :
-
-- Add dark mode
-- Add light mode
-- Add system mode
-
-- Fix any missing UI elements
-- Fix any UI elements that are not working / bugging
-
-- Can't use the url input after closing a tab
-
-## Website :
-
-- Create a branch for the website
-- Create a website for the app
-- Locally create the website files in a different folder to avoid conflicts and confusion
-</file>
-
 <file path="src/main/ipc/handlers.ts">
 import { ipcMain, dialog } from 'electron';
-import { Request, HttpResponse, Collection, Environment, HistoryEntry } from '../../shared/types';
+import { Request, HttpResponse, Collection, Environment, HistoryEntry, Project } from '../../shared/types';
 import { RequestHandler } from './request-handler';
 import { CollectionStorage } from '../storage/collections';
 import { EnvironmentStorage } from '../storage/environments';
 import { HistoryStorage } from '../storage/history';
+import { ProjectStorage } from '../storage/projects';
 import * as fs from 'fs';
 
 const requestHandler = new RequestHandler();
 const collectionStorage = new CollectionStorage();
 const environmentStorage = new EnvironmentStorage();
 const historyStorage = new HistoryStorage();
+const projectStorage = new ProjectStorage();
 
 export const registerHandlers = (): void => {
   // Send HTTP request
@@ -950,6 +2139,61 @@ export const registerHandlers = (): void => {
     collectionStorage.delete(id);
   });
   
+  // Project management
+  ipcMain.handle('project:save', async (_event, project: Project): Promise<void> => {
+    projectStorage.save(project);
+  });
+  
+  ipcMain.handle('project:load', async (): Promise<Project[]> => {
+    return projectStorage.loadAll();
+  });
+  
+  ipcMain.handle('project:delete', async (_event, id: string): Promise<void> => {
+    projectStorage.delete(id);
+  });
+  
+  // Export project to JSON file
+  ipcMain.handle('project:export', async (_event, project: Project): Promise<void> => {
+    const { filePath } = await dialog.showSaveDialog({
+      title: 'Export Project',
+      defaultPath: `${project.name || 'project'}.json`,
+      filters: [
+        { name: 'JSON Files', extensions: ['json'] }
+      ]
+    });
+    
+    if (filePath) {
+      const projectData = JSON.stringify(project, null, 2);
+      fs.writeFileSync(filePath, projectData, 'utf-8');
+    }
+  });
+  
+  // Import project from JSON file
+  ipcMain.handle('project:import', async (): Promise<Project | null> => {
+    const { filePaths } = await dialog.showOpenDialog({
+      title: 'Import Project',
+      filters: [
+        { name: 'JSON Files', extensions: ['json'] }
+      ],
+      properties: ['openFile']
+    });
+    
+    if (filePaths && filePaths.length > 0) {
+      try {
+        const fileContent = fs.readFileSync(filePaths[0], 'utf-8');
+        const project = JSON.parse(fileContent) as Project;
+        // Save imported project
+        projectStorage.save(project);
+        return project;
+      } catch (error) {
+        console.error('Failed to parse project file:', error);
+        return null;
+      }
+    }
+    
+    return null;
+  });
+  
   // Environment management
   ipcMain.handle('environment:save', async (_event, environment: Environment): Promise<void> => {
     environmentStorage.save(environment);
@@ -976,6 +2220,44 @@ export const registerHandlers = (): void => {
     historyStorage.clear();
   });
 };
+</file>
+
+<file path="todo.md">
+# TODO
+
+## documentation :
+
+- Once everything is finished, create a documentation file
+- Explain in detail the GUI and how it works
+- Explain in detail the functionality
+- Explain in detail every file
+
+## functionality :
+
+- Add support for cookies
+- Add support for ogranizing folders / projects
+- Options for projects / collections, eg : {{baseUrl}}
+
+## UI :
+
+- Add dark mode
+- Add light mode
+- Add system mode
+
+- Fix any missing UI elements
+- Fix any UI elements that are not working / bugging
+
+- Can't use the url input after closing a tab
+
+## Website :
+
+- Create a branch for the website
+- Create a website for the app
+- Locally create the website files in a different folder to avoid conflicts and confusion
+
+## Localization :
+
+- Try to add localization
 </file>
 
 <file path="package.json">
@@ -1029,20 +2311,30 @@ export const registerHandlers = (): void => {
 </file>
 
 <file path="src/renderer/index.ts">
-import hljs from 'highlight.js';
-import { Request, HttpResponse, HttpMethod, KeyValue, Collection, Environment, BodyType, AuthType } from '../shared/types';
+import { Request, HttpResponse, HttpMethod, KeyValue, Project } from '../shared/types';
+import { TabManager } from './helpers/tab-manager';
+import { replaceVariables } from './helpers/variable-replacer';
+import { DisplayFormat, displayResponse } from './helpers/response-handler';
+import { buildRequest, methodColors, isHttpMethod } from './helpers/request-builder';
+import { renderKeyValueList, addKeyValue } from './helpers/key-value-renderer';
+import { deleteFolder, deleteRequest, createFolder, createRequest, addFolderToProject, addRequestToProject } from './helpers/project-manager';
+import { renderSidebar, SidebarCallbacks } from './helpers/sidebar-renderer';
+import { renderProjectList, ProjectCallbacks } from './helpers/project-renderer';
+import { loadRequestIntoUI } from './helpers/request-loader';
+import { getBreadcrumbs, renderBreadcrumbs } from './helpers/breadcrumbs';
+import { getRequestContext, saveRequestToProject, updateRequestInProject } from './helpers/request-context';
+import { renderFolderTree } from './helpers/folder-tree';
+
 
 declare global {
   interface Window {
     electron: {
       sendRequest: (request: Request) => Promise<HttpResponse>;
-      saveCollection: (collection: Collection) => Promise<void>;
-      loadCollections: () => Promise<Collection[]>;
-      deleteCollection: (id: string) => Promise<void>;
-      saveEnvironment: (environment: Environment) => Promise<void>;
-      loadEnvironments: () => Promise<Environment[]>;
-      deleteEnvironment: (id: string) => Promise<void>;
-      setActiveEnvironment: (id: string) => Promise<void>;
+      saveProject: (project: Project) => Promise<void>;
+      loadProjects: () => Promise<Project[]>;
+      deleteProject: (id: string) => Promise<void>;
+      exportProject: (project: Project) => Promise<void>;
+      importProject: () => Promise<Project | null>;
       getHistory: (limit?: number) => Promise<any[]>;
       clearHistory: () => Promise<void>;
       exportRequest: (request: Request) => Promise<void>;
@@ -1051,21 +2343,27 @@ declare global {
   }
 }
 
-type DisplayFormat = 'raw' | 'json' | 'html' | 'xml';
 type TabType = 'params' | 'headers' | 'body' | 'auth';
 
-interface Tab {
-  id: string;
-  name: string;
-  request: Request;
-  response: HttpResponse | null;
-}
-
-let tabs: Tab[] = [];
-let activeTabId: string = '';
+// State
+let projects: Project[] = [];
+let currentProject: Project | null = null;
+let autoSaveEnabled: boolean = true;
+let hasUnsavedChanges: boolean = false;
 let saveDebounceTimer: number | null = null;
 
-// UI Elements
+let currentFormat: DisplayFormat = 'raw';
+let currentMethod: HttpMethod = 'GET';
+let lastResponse: HttpResponse | null = null;
+let currentTab: TabType = 'params';
+let queryParams: KeyValue[] = [];
+let headers: KeyValue[] = [];
+let formFields: KeyValue[] = [];
+let projectVariables: KeyValue[] = [];
+let editingProjectId: string | null = null;
+let currentFolderParentId: string | null = null;
+
+// UI Elements - Main
 const fetchButton = document.getElementById('fetch') as HTMLButtonElement;
 const urlInput = document.getElementById('url') as HTMLInputElement;
 const resultDiv = document.getElementById('result') as HTMLDivElement;
@@ -1077,6 +2375,7 @@ const statusCodeSpan = document.getElementById('status-code') as HTMLSpanElement
 const responseTimeSpan = document.getElementById('response-time') as HTMLSpanElement;
 const responseSizeSpan = document.getElementById('response-size') as HTMLSpanElement;
 
+// UI Elements - Tabs
 const tabsContainer = document.getElementById('tabs-container') as HTMLDivElement;
 const newTabBtn = document.getElementById('new-tab') as HTMLButtonElement;
 
@@ -1110,6 +2409,7 @@ const authBasicPanel = document.getElementById('auth-basic') as HTMLDivElement;
 const authBearerPanel = document.getElementById('auth-bearer') as HTMLDivElement;
 const authApiKeyPanel = document.getElementById('auth-apikey') as HTMLDivElement;
 
+// UI Elements - Actions
 const saveRequestBtn = document.getElementById('save-request') as HTMLButtonElement;
 const loadRequestBtn = document.getElementById('load-request') as HTMLButtonElement;
 const viewHistoryBtn = document.getElementById('view-history') as HTMLButtonElement;
@@ -1118,227 +2418,265 @@ const historyContainer = document.getElementById('history-container') as HTMLDiv
 const clearHistoryBtn = document.getElementById('clear-history') as HTMLButtonElement;
 const closeHistoryBtn = document.getElementById('close-history') as HTMLButtonElement;
 
-// State
-let currentFormat: DisplayFormat = 'raw';
-let currentMethod: HttpMethod = 'GET';
-let lastResponse: HttpResponse | null = null;
-let currentTab: TabType = 'params';
-let queryParams: KeyValue[] = [];
-let headers: KeyValue[] = [];
-let formFields: KeyValue[] = [];
+// UI Elements - Projects
+const projectDashboardBtn = document.getElementById('project-dashboard') as HTMLButtonElement;
+const projectModal = document.getElementById('project-modal') as HTMLDivElement;
+const projectListContainer = document.getElementById('project-list') as HTMLDivElement;
+const createProjectBtn = document.getElementById('create-project') as HTMLButtonElement;
+const closeProjectModalBtn = document.getElementById('close-project-modal') as HTMLButtonElement;
+const currentProjectName = document.getElementById('current-project-name') as HTMLSpanElement;
+const sidebarContainer = document.getElementById('sidebar-container') as HTMLDivElement;
+const importProjectBtn = document.getElementById('import-project') as HTMLButtonElement;
 
-const methodColors: Record<HttpMethod, string> = {
-  'GET': 'text-green-600',
-  'POST': 'text-yellow-600',
-  'PUT': 'text-blue-600',
-  'PATCH': 'text-pink-600',
-  'DELETE': 'text-red-600',
-  'HEAD': 'text-green-400',
-  'OPTIONS': 'text-purple-600'
-};
+// UI Elements - Project Form
+const projectFormModal = document.getElementById('project-form-modal') as HTMLDivElement;
+const projectFormTitle = document.getElementById('project-form-title') as HTMLHeadingElement;
+const projectNameInput = document.getElementById('project-name-input') as HTMLInputElement;
+const projectDescInput = document.getElementById('project-desc-input') as HTMLTextAreaElement;
+const projectBaseUrlInput = document.getElementById('project-baseurl-input') as HTMLInputElement;
+const projectVariablesContainer = document.getElementById('project-variables-container') as HTMLDivElement;
+const addProjectVariableBtn = document.getElementById('add-project-variable') as HTMLButtonElement;
+const saveProjectFormBtn = document.getElementById('save-project-form') as HTMLButtonElement;
+const cancelProjectFormBtn = document.getElementById('cancel-project-form') as HTMLButtonElement;
 
-// Debounced save function
+// UI Elements - Folder
+const folderModal = document.getElementById('folder-modal') as HTMLDivElement;
+const folderModalTitle = document.getElementById('folder-modal-title') as HTMLHeadingElement;
+const folderNameInput = document.getElementById('folder-name-input') as HTMLInputElement;
+const saveFolderBtn = document.getElementById('save-folder') as HTMLButtonElement;
+const cancelFolderBtn = document.getElementById('cancel-folder') as HTMLButtonElement;
+
+// UI Elements - Folder Modal
+const selectFolderModal = document.getElementById('select-folder-modal') as HTMLDivElement;
+const selectProjectRoot = document.getElementById('select-project-root') as HTMLButtonElement;
+const folderTreeContainer = document.getElementById('folder-tree-container') as HTMLDivElement;
+const cancelFolderSelect = document.getElementById('cancel-folder-select') as HTMLButtonElement;
+
+// State for adding request
+let pendingRequestToAdd: Request | null = null;
+
+// Breadcrumbs
+const breadcrumbContainer = document.getElementById('breadcrumb-container') as HTMLDivElement;
+const addToProjectBtn = document.getElementById('add-to-project') as HTMLButtonElement;
+
+// Tab Manager
+const tabManager = new TabManager(tabsContainer, (tabId) => {
+  loadTabById(tabId);
+});
+
+// Project Functions
+async function loadProjects(): Promise<void> {
+  projects = await window.electron.loadProjects();
+  renderProjectListUI();
+  
+  const lastProjectId = localStorage.getItem('lastActiveProject');
+  if (lastProjectId) {
+    const project = projects.find(p => p.id === lastProjectId);
+    if (project) {
+      loadProject(project.id);
+    }
+  }
+}
+
+async function saveProject(project: Project): Promise<void> {
+  await window.electron.saveProject(project);
+  hasUnsavedChanges = false;
+  await loadProjects();
+}
+
+function markUnsavedChanges(): void {
+  hasUnsavedChanges = true;
+}
+
+function autoSaveProject(): void {
+  if (currentProject && autoSaveEnabled) {
+    saveProject(currentProject);
+  }
+}
+
 function debouncedSaveCurrentTab(): void {
   if (saveDebounceTimer !== null) {
     clearTimeout(saveDebounceTimer);
   }
   
   saveDebounceTimer = window.setTimeout(() => {
+    const tab = tabManager.getActiveTab();
+    if (!tab) return;
+    
+    const currentRequestContext = {
+      id: tab.request.id,
+      projectId: tab.request.projectId,
+      folderId: tab.request.folderId,
+      createdAt: tab.request.createdAt
+    };
+    
     saveCurrentTab();
+    
+    // Restore context after save to prevent breadcrumb flash
+    if (tab) {
+      tab.request.id = currentRequestContext.id;
+      tab.request.projectId = currentRequestContext.projectId;
+      tab.request.folderId = currentRequestContext.folderId;
+      tab.request.createdAt = currentRequestContext.createdAt;
+    }
+    
     saveDebounceTimer = null;
   }, 500);
 }
 
-// Create default request
-function createDefaultRequest(): Request {
-  return {
-    id: Date.now().toString(),
-    name: 'Untitled Request',
-    method: 'GET',
-    url: '',
-    headers: [],
-    queryParams: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-}
-
-// Create new tab
-function createNewTab(): void {
-  const tab: Tab = {
-    id: Date.now().toString(),
-    name: 'New Request',
-    request: createDefaultRequest(),
-    response: null
-  };
-  
-  tabs.push(tab);
-  activeTabId = tab.id;
-  renderTabs();
-  loadTab(tab.id);
-}
-
-// Render tabs
-function renderTabs(): void {
-  tabsContainer.innerHTML = '';
-  
-  tabs.forEach(tab => {
-    const tabElement = document.createElement('div');
-    tabElement.className = `flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer ${
-      activeTabId === tab.id ? 'bg-gray-800 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-750'
-    }`;
-    
-    const tabName = document.createElement('span');
-    tabName.textContent = tab.name;
-    tabName.className = 'text-sm';
-    
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.className = 'text-lg hover:text-red-400 ml-2';
-    closeBtn.onclick = (e) => {
-      e.stopPropagation();
-      closeTab(tab.id);
-    };
-    
-    tabElement.onclick = () => {
-      activeTabId = tab.id;
-      renderTabs();
-      loadTab(tab.id);
-    };
-    
-    tabElement.appendChild(tabName);
-    if (tabs.length > 1) {
-      tabElement.appendChild(closeBtn);
-    }
-    
-    tabsContainer.appendChild(tabElement);
-  });
-}
-
-// Close tab
-function closeTab(tabId: string): void {
-  if (tabs.length === 1) return; // Don't close the last tab
-  
-  const index = tabs.findIndex(t => t.id === tabId);
-  if (index === -1) return;
-  
-  tabs.splice(index, 1);
-  
-  if (activeTabId === tabId) {
-    activeTabId = tabs[Math.max(0, index - 1)].id;
-  }
-  
-  renderTabs();
-  loadTab(activeTabId);
-}
-
-// Save current tab state
 function saveCurrentTab(): void {
-  const tab = tabs.find(t => t.id === activeTabId);
+  const tab = tabManager.getActiveTab();
   if (!tab) return;
   
-  tab.request = buildRequest();
-  tab.response = lastResponse;
+  const request = buildRequest(
+    currentMethod,
+    urlInput,
+    paramsContainer,
+    headersContainer,
+    bodyTypeSelect,
+    bodyRawTextarea,
+    bodyJsonTextarea,
+    bodyFormDataContainer,
+    authTypeSelect,
+    currentProject?.id
+  );
   
-  // Update tab name based on URL
-  if (tab.request.url) {
-    try {
-      const url = new URL(tab.request.url);
-      const urlPath = url.pathname.split('/').filter(p => p).join('/') || url.hostname;
-      tab.name = `${tab.request.method} ${urlPath.substring(0, 20)}${urlPath.length > 20 ? '...' : ''}`;
-    } catch {
-      tab.name = `${tab.request.method} Request`;
-    }
-  } else {
-    tab.name = 'New Request';
+  // Preserve the original request ID and context
+  request.id = tab.request.id;
+  request.projectId = tab.request.projectId;
+  request.folderId = tab.request.folderId;
+  request.createdAt = tab.request.createdAt;
+  
+  tabManager.updateActiveTab(request, lastResponse);
+  
+  // Update request in project if it belongs to one
+  if (currentProject && request.projectId === currentProject.id) {
+    updateRequestInProject(request, currentProject);
+    markUnsavedChanges();
   }
   
-  renderTabs();
+  // Update breadcrumbs
+  updateBreadcrumbs(request);
 }
 
-// Load tab
-function loadTab(tabId: string): void {
-  const tab = tabs.find(t => t.id === tabId);
+// Add to project button event listener
+addToProjectBtn?.addEventListener('click', () => {
+  if (!currentProject) {
+    alert('Please select a project first');
+    return;
+  }
+  
+  const tab = tabManager.getActiveTab();
   if (!tab) return;
   
-  const request = tab.request;
+  pendingRequestToAdd = tab.request;
   
-  // Populate URL
-  urlInput.value = request.url;
-  
-  // Set method
-  if (isHttpMethod(request.method)) {
-    currentMethod = request.method;
-    updateMethodButton();
-  }
-  
-  // Populate query params
-  queryParams = request.queryParams || [];
-  renderParams();
-  
-  // Populate headers
-  headers = request.headers || [];
-  renderHeaders();
-  
-  // Populate body
-  if (request.body) {
-    bodyTypeSelect.value = request.body.type;
-    bodyTypeSelect.dispatchEvent(new Event('change'));
-    
-    switch (request.body.type) {
-      case 'raw':
-      case 'x-www-form-urlencoded':
-        bodyRawTextarea.value = request.body.raw || '';
-        break;
-      case 'json':
-        bodyJsonTextarea.value = typeof request.body.json === 'string' 
-          ? request.body.json 
-          : JSON.stringify(request.body.json, null, 2);
-        break;
-      case 'form-data':
-        formFields = request.body.formData || [];
-        renderFormFields();
-        break;
+  // Show folder selection modal
+  folderTreeContainer.innerHTML = '';
+  renderFolderTree(folderTreeContainer, currentProject.folders, (folderId) => {
+    if (pendingRequestToAdd) {
+      saveRequestToProject(pendingRequestToAdd, currentProject!, folderId);
+      markUnsavedChanges();
+      autoSaveProject();
+      renderSidebarUI();
+      
+      // Update the tab's request
+      tab.request.projectId = currentProject!.id;
+      tab.request.folderId = folderId;
+      updateBreadcrumbs(tab.request);
+      
+      selectFolderModal.classList.add('hidden');
+      pendingRequestToAdd = null;
     }
-  } else {
-    bodyTypeSelect.value = 'none';
-    bodyTypeSelect.dispatchEvent(new Event('change'));
-  }
+  });
   
-  // Populate auth
-  if (request.auth) {
-    authTypeSelect.value = request.auth.type;
-    authTypeSelect.dispatchEvent(new Event('change'));
+  selectFolderModal.classList.remove('hidden');
+});
+
+selectProjectRoot?.addEventListener('click', () => {
+  if (pendingRequestToAdd && currentProject) {
+    saveRequestToProject(pendingRequestToAdd, currentProject);
+    markUnsavedChanges();
+    autoSaveProject();
+    renderSidebarUI();
     
-    switch (request.auth.type) {
-      case 'basic':
-        if (request.auth.basic) {
-          (document.getElementById('auth-basic-username') as HTMLInputElement).value = request.auth.basic.username || '';
-          (document.getElementById('auth-basic-password') as HTMLInputElement).value = request.auth.basic.password || '';
-        }
-        break;
-      case 'bearer':
-        if (request.auth.bearer) {
-          (document.getElementById('auth-bearer-token') as HTMLInputElement).value = request.auth.bearer.token || '';
-        }
-        break;
-      case 'api-key':
-        if (request.auth.apiKey) {
-          (document.getElementById('auth-apikey-key') as HTMLInputElement).value = request.auth.apiKey.key || '';
-          (document.getElementById('auth-apikey-value') as HTMLInputElement).value = request.auth.apiKey.value || '';
-          (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value = request.auth.apiKey.addTo || 'header';
-        }
-        break;
+    const tab = tabManager.getActiveTab();
+    if (tab) {
+      tab.request.projectId = currentProject.id;
+      tab.request.folderId = undefined;
+      updateBreadcrumbs(tab.request);
     }
-  } else {
-    authTypeSelect.value = 'none';
-    authTypeSelect.dispatchEvent(new Event('change'));
+    
+    selectFolderModal.classList.add('hidden');
+    pendingRequestToAdd = null;
+  }
+});
+
+cancelFolderSelect?.addEventListener('click', () => {
+  selectFolderModal.classList.add('hidden');
+  pendingRequestToAdd = null;
+});
+
+function updateBreadcrumbs(request?: Request): void {
+  const tab = tabManager.getActiveTab();
+  const currentRequest = request || tab?.request;
+  
+  if (!currentRequest) {
+    breadcrumbContainer.innerHTML = '<span class="text-gray-500 text-sm">No request</span>';
+    addToProjectBtn.classList.add('hidden');
+    return;
   }
   
-  // Load response if available
+  const context = getRequestContext(currentRequest);
+  
+  if (context.isInProject && currentProject && currentRequest.projectId === currentProject.id) {
+    const breadcrumbs = getBreadcrumbs(currentProject, currentRequest.folderId);
+    renderBreadcrumbs(breadcrumbContainer, breadcrumbs);
+    addToProjectBtn.classList.add('hidden');
+  } else {
+    breadcrumbContainer.innerHTML = '<span class="text-gray-500 text-sm">Not in any project</span>';
+    addToProjectBtn.classList.remove('hidden');
+  }
+}
+
+function loadTabById(tabId: string): void {
+  const tab = tabManager.getTabs().find(t => t.id === tabId);
+  if (!tab) return;
+  
+  loadRequestIntoUI(
+    tab.request,
+    {
+      urlInput,
+      paramsContainer,
+      headersContainer,
+      bodyTypeSelect,
+      bodyRawTextarea,
+      bodyJsonTextarea,
+      bodyFormDataContainer,
+      authTypeSelect
+    },
+    {
+      renderParams: () => renderKeyValueList(paramsContainer, queryParams, debouncedSaveCurrentTab),
+      renderHeaders: () => renderKeyValueList(headersContainer, headers, debouncedSaveCurrentTab),
+      renderFormFields: () => renderKeyValueList(bodyFormDataContainer, formFields, debouncedSaveCurrentTab)
+    },
+    {
+      setMethod: (method) => {
+        currentMethod = method;
+        updateMethodButton();
+      },
+      setQueryParams: (params) => { queryParams = params; },
+      setHeaders: (hdrs) => { headers = hdrs; },
+      setFormFields: (fields) => { formFields = fields; }
+    }
+  );
+  
+  // Update breadcrumbs
+  updateBreadcrumbs(tab.request);
+  
   if (tab.response) {
     lastResponse = tab.response;
-    displayResponse(tab.response);
+    displayResponse(tab.response, currentFormat, resultDiv, statusCodeSpan, responseTimeSpan, responseSizeSpan);
   } else {
     lastResponse = null;
     resultDiv.innerHTML = '<div class="text-gray-400 p-4">No response yet</div>';
@@ -1348,14 +2686,6 @@ function loadTab(tabId: string): void {
     responseSizeSpan.textContent = '-';
   }
 }
-
-// New tab event listener
-newTabBtn?.addEventListener('click', () => {
-  createNewTab();
-});
-
-// Input event listener with debounce
-urlInput?.addEventListener('input', () => debouncedSaveCurrentTab());
 
 // Tab Management
 function switchTab(tab: TabType) {
@@ -1392,17 +2722,169 @@ function switchTab(tab: TabType) {
   }
 }
 
-paramsTab?.addEventListener('click', () => switchTab('params'));
-headersTab?.addEventListener('click', () => switchTab('headers'));
-bodyTab?.addEventListener('click', () => switchTab('body'));
-authTab?.addEventListener('click', () => switchTab('auth'));
-
 // Method Management
 const updateMethodButton = () => {
   Object.values(methodColors).forEach(color => methodText.classList.remove(color));
   methodText.classList.add(methodColors[currentMethod]);
   methodText.textContent = currentMethod;
 };
+
+// Project UI Functions
+function renderProjectListUI(): void {
+  const callbacks: ProjectCallbacks = {
+    onLoadProject: (projectId) => {
+      loadProject(projectId);
+      projectModal.classList.add('hidden');
+    },
+    onEditProject: (project) => {
+      openProjectForm(project);
+    },
+    onExportProject: async (project) => {
+      await window.electron.exportProject(project);
+    },
+    onDeleteProject: async (projectId) => {
+      const project = projects.find(p => p.id === projectId);
+      if (project && confirm(`Are you sure you want to delete project "${project.name}"?`)) {
+        await window.electron.deleteProject(projectId);
+        if (currentProject?.id === projectId) {
+          currentProject = null;
+          currentProjectName.textContent = 'No Project';
+          renderSidebarUI();
+        }
+        await loadProjects();
+      }
+    }
+  };
+  
+  renderProjectList(projectListContainer, projects, callbacks);
+}
+
+function openProjectForm(project?: Project): void {
+  editingProjectId = project?.id || null;
+  projectFormTitle.textContent = project ? 'Edit Project' : 'Create New Project';
+  
+  projectNameInput.value = project?.name || '';
+  projectDescInput.value = project?.description || '';
+  projectBaseUrlInput.value = project?.baseUrl || '';
+  
+  projectVariables = project?.variables ? [...project.variables] : [];
+  renderKeyValueList(projectVariablesContainer, projectVariables, () => {});
+  
+  projectModal.classList.add('hidden');
+  projectFormModal.classList.remove('hidden');
+}
+
+function loadProject(projectId: string): void {
+  const project = projects.find(p => p.id === projectId);
+  if (!project) return;
+  
+  currentProject = project;
+  localStorage.setItem('lastActiveProject', projectId);
+  currentProjectName.textContent = project.name;
+  
+  renderSidebarUI();
+}
+
+function renderSidebarUI(): void {
+  const callbacks: SidebarCallbacks = {
+    onNewFolder: () => openFolderForm(),
+    onNewRequest: () => createRequestInProject(),
+    onAddRequestToFolder: (folderId) => createRequestInFolder(folderId),
+    onAddSubfolder: (parentId) => openFolderForm(parentId),
+    onDeleteFolder: (folderId) => deleteFolderUI(folderId),
+    onDeleteRequest: (requestId) => deleteRequestUI(requestId),
+    onLoadRequest: (request) => loadRequestIntoTab(request)
+  };
+  
+  renderSidebar(sidebarContainer, currentProject, callbacks);
+}
+
+function openFolderForm(parentId?: string): void {
+  currentFolderParentId = parentId || null;
+  folderModalTitle.textContent = 'Create New Folder';
+  folderNameInput.value = '';
+  folderModal.classList.remove('hidden');
+}
+
+function deleteFolderUI(folderId: string): void {
+  if (!currentProject) return;
+  if (!confirm('Delete this folder and all its contents?')) return;
+  
+  deleteFolder(currentProject, folderId);
+  markUnsavedChanges();
+  autoSaveProject();
+  renderSidebarUI();
+}
+
+function createRequestInProject(): void {
+  if (!currentProject) return;
+  
+  const request = createRequest(currentProject.id);
+  addRequestToProject(currentProject, request);
+  
+  markUnsavedChanges();
+  autoSaveProject();
+  renderSidebarUI();
+  
+  loadRequestIntoTab(request);
+}
+
+function createRequestInFolder(folderId: string): void {
+  if (!currentProject) return;
+  
+  const request = createRequest(currentProject.id, folderId);
+  addRequestToProject(currentProject, request, folderId);
+  
+  markUnsavedChanges();
+  autoSaveProject();
+  renderSidebarUI();
+  
+  loadRequestIntoTab(request);
+}
+
+function loadRequestIntoTab(request: Request): void {
+  const newTabId = tabManager.createTab({ ...request });
+  const tab = tabManager.getActiveTab();
+  if (tab) {
+    tab.request = { ...request };
+    tab.response = null;
+    loadTabById(tabManager.getActiveTabId());
+  }
+}
+
+function deleteRequestUI(requestId: string): void {
+  if (!currentProject) return;
+  if (!confirm('Delete this request?')) return;
+  
+  deleteRequest(currentProject, requestId);
+  
+  markUnsavedChanges();
+  autoSaveProject();
+  renderSidebarUI();
+}
+
+// Event Listeners
+newTabBtn?.addEventListener('click', () => {
+  const request: Request = {
+    id: Date.now().toString(),
+    name: 'Untitled Request',
+    method: 'GET',
+    url: '',
+    headers: [],
+    queryParams: [],
+    projectId: currentProject?.id,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  tabManager.createTab(request);
+});
+
+urlInput?.addEventListener('input', () => debouncedSaveCurrentTab());
+
+paramsTab?.addEventListener('click', () => switchTab('params'));
+headersTab?.addEventListener('click', () => switchTab('headers'));
+bodyTab?.addEventListener('click', () => switchTab('body'));
+authTab?.addEventListener('click', () => switchTab('auth'));
 
 methodButton?.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -1428,133 +2910,10 @@ methodOptions.forEach(option => {
   });
 });
 
-function isHttpMethod(method: string): method is HttpMethod {
-  return ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method);
-}
+addParamBtn?.addEventListener('click', () => addKeyValue(queryParams, paramsContainer, debouncedSaveCurrentTab));
+addHeaderBtn?.addEventListener('click', () => addKeyValue(headers, headersContainer, debouncedSaveCurrentTab));
+addFormFieldBtn?.addEventListener('click', () => addKeyValue(formFields, bodyFormDataContainer, debouncedSaveCurrentTab));
 
-// Key-Value Pair Management
-function createKeyValueRow(
-  key: string = '',
-  value: string = '',
-  enabled: boolean = true,
-  onDelete: () => void
-): HTMLDivElement {
-  const row = document.createElement('div');
-  row.className = 'flex gap-2 items-center mb-2';
-  
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = enabled;
-  checkbox.className = 'w-5 h-5';
-  checkbox.addEventListener('change', debouncedSaveCurrentTab);
-  
-  const keyInput = document.createElement('input');
-  keyInput.type = 'text';
-  keyInput.value = key;
-  keyInput.placeholder = 'Key';
-  keyInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
-  keyInput.addEventListener('input', debouncedSaveCurrentTab);
-  
-  const valueInput = document.createElement('input');
-  valueInput.type = 'text';
-  valueInput.value = value;
-  valueInput.placeholder = 'Value';
-  valueInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
-  valueInput.addEventListener('input', debouncedSaveCurrentTab);
-  
-  const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = '×';
-  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-xl font-bold';
-  deleteBtn.onclick = onDelete;
-  
-  row.appendChild(checkbox);
-  row.appendChild(keyInput);
-  row.appendChild(valueInput);
-  row.appendChild(deleteBtn);
-  
-  return row;
-}
-
-function addParam() {
-  const index = queryParams.length;
-  queryParams.push({ key: '', value: '', enabled: true });
-  
-  const row = createKeyValueRow('', '', true, () => {
-    queryParams.splice(index, 1);
-    renderParams();
-    debouncedSaveCurrentTab();
-  });
-  
-  paramsContainer.appendChild(row);
-}
-
-function renderParams() {
-  paramsContainer.innerHTML = '';
-  queryParams.forEach((param, index) => {
-    const row = createKeyValueRow(param.key, param.value, param.enabled, () => {
-      queryParams.splice(index, 1);
-      renderParams();
-      debouncedSaveCurrentTab();
-    });
-    paramsContainer.appendChild(row);
-  });
-}
-
-function addHeader() {
-  const index = headers.length;
-  headers.push({ key: '', value: '', enabled: true });
-  
-  const row = createKeyValueRow('', '', true, () => {
-    headers.splice(index, 1);
-    renderHeaders();
-    debouncedSaveCurrentTab();
-  });
-  
-  headersContainer.appendChild(row);
-}
-
-function renderHeaders() {
-  headersContainer.innerHTML = '';
-  headers.forEach((header, index) => {
-    const row = createKeyValueRow(header.key, header.value, header.enabled, () => {
-      headers.splice(index, 1);
-      renderHeaders();
-      debouncedSaveCurrentTab();
-    });
-    headersContainer.appendChild(row);
-  });
-}
-
-function addFormField() {
-  const index = formFields.length;
-  formFields.push({ key: '', value: '', enabled: true });
-  
-  const row = createKeyValueRow('', '', true, () => {
-    formFields.splice(index, 1);
-    renderFormFields();
-    debouncedSaveCurrentTab();
-  });
-  
-  bodyFormDataContainer.appendChild(row);
-}
-
-function renderFormFields() {
-  bodyFormDataContainer.innerHTML = '';
-  formFields.forEach((field, index) => {
-    const row = createKeyValueRow(field.key, field.value, field.enabled, () => {
-      formFields.splice(index, 1);
-      renderFormFields();
-      debouncedSaveCurrentTab();
-    });
-    bodyFormDataContainer.appendChild(row);
-  });
-}
-
-addParamBtn?.addEventListener('click', addParam);
-addHeaderBtn?.addEventListener('click', addHeader);
-addFormFieldBtn?.addEventListener('click', addFormField);
-
-// Body Type Management
 bodyTypeSelect?.addEventListener('change', () => {
   const type = bodyTypeSelect.value;
   
@@ -1576,11 +2935,9 @@ bodyTypeSelect?.addEventListener('change', () => {
   debouncedSaveCurrentTab();
 });
 
-// Add debounced save to body textareas
 bodyRawTextarea?.addEventListener('input', debouncedSaveCurrentTab);
 bodyJsonTextarea?.addEventListener('input', debouncedSaveCurrentTab);
 
-// Auth Type Management
 authTypeSelect?.addEventListener('change', () => {
   const type = authTypeSelect.value;
   
@@ -1604,7 +2961,6 @@ authTypeSelect?.addEventListener('change', () => {
   debouncedSaveCurrentTab();
 });
 
-// Add debounced save to auth inputs
 document.getElementById('auth-basic-username')?.addEventListener('input', debouncedSaveCurrentTab);
 document.getElementById('auth-basic-password')?.addEventListener('input', debouncedSaveCurrentTab);
 document.getElementById('auth-bearer-token')?.addEventListener('input', debouncedSaveCurrentTab);
@@ -1612,212 +2968,41 @@ document.getElementById('auth-apikey-key')?.addEventListener('input', debouncedS
 document.getElementById('auth-apikey-value')?.addEventListener('input', debouncedSaveCurrentTab);
 document.getElementById('auth-apikey-addto')?.addEventListener('change', debouncedSaveCurrentTab);
 
-// Response Display
-const getStatusText = (code: number): string => {
-  const statusTexts: Record<number, string> = {
-    200: 'OK', 201: 'Created', 204: 'No Content',
-    301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
-    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
-    404: 'Not Found', 405: 'Method Not Allowed',
-    500: 'Internal Server Error', 502: 'Bad Gateway',
-    503: 'Service Unavailable', 504: 'Gateway Timeout'
-  };
-  return statusTexts[code] || 'Unknown';
-};
-
-const detectLanguage = (data: string): string => {
-  const trimmed = data.trim();
-  
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
-      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-    try {
-      JSON.parse(trimmed);
-      return 'json';
-    } catch {}
-  }
-  
-  if (trimmed.startsWith('<?xml') || 
-      (trimmed.startsWith('<') && trimmed.includes('</') && trimmed.endsWith('>'))) {
-    return 'xml';
-  }
-  
-  if (trimmed.toLowerCase().includes('<!doctype html') || 
-      trimmed.toLowerCase().includes('<html')) {
-    return 'html';
-  }
-  
-  return 'plaintext';
-};
-
-const displayResponse = (response: HttpResponse) => {
-  lastResponse = response;
-  resultDiv.innerHTML = '';
-  
-  const codeBlock = document.createElement('pre');
-  codeBlock.style.margin = '0';
-  codeBlock.style.width = '100%';
-  codeBlock.style.overflow = 'visible';
-  
-  const codeElement = document.createElement('code');
-  codeElement.style.display = 'block';
-  codeElement.style.padding = '1rem';
-  codeElement.style.whiteSpace = 'pre';
-  codeElement.style.overflowWrap = 'normal';
-  codeElement.style.wordBreak = 'normal';
-  
-  const data = response.body;
-  
-  switch (currentFormat) {
-    case 'raw':
-      const detectedLang = detectLanguage(data);
-      codeElement.className = `language-${detectedLang}`;
-      codeElement.textContent = data;
-      break;
-      
-    case 'json':
-      try {
-        const parsed = JSON.parse(data);
-        const formatted = JSON.stringify(parsed, null, 2);
-        codeElement.className = 'language-json';
-        codeElement.textContent = formatted;
-      } catch {
-        codeElement.className = 'language-plaintext';
-        codeElement.textContent = 'Invalid JSON: ' + data;
-      }
-      break;
-      
-    case 'html':
-      codeElement.className = 'language-html';
-      codeElement.textContent = data;
-      break;
-      
-    case 'xml':
-      codeElement.className = 'language-xml';
-      codeElement.textContent = data;
-      break;
-  }
-  
-  codeBlock.appendChild(codeElement);
-  resultDiv.appendChild(codeBlock);
-  hljs.highlightElement(codeElement);
-  
-  // Update stats
-  statusCodeSpan.textContent = `${response.status} ${response.statusText}`;
-  statusCodeSpan.className = response.status >= 200 && response.status < 300 
-    ? 'text-green-400 font-semibold' 
-    : 'text-red-400 font-semibold';
-  
-  responseTimeSpan.textContent = `${response.time.toFixed(0)}ms`;
-  responseSizeSpan.textContent = `${(response.size / 1024).toFixed(2)}KB`;
-};
-
 formatSelect?.addEventListener('change', () => {
   currentFormat = formatSelect.value as DisplayFormat;
   if (lastResponse) {
-    displayResponse(lastResponse);
+    displayResponse(lastResponse, currentFormat, resultDiv, statusCodeSpan, responseTimeSpan, responseSizeSpan);
   }
 });
 
-// Build Request
-function buildRequest(): Request {
-  // Get query params from inputs
-  const paramRows = paramsContainer.querySelectorAll('.flex');
-  const currentParams: KeyValue[] = [];
-  paramRows.forEach(row => {
-    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
-    currentParams.push({
-      key: inputs[0].value,
-      value: inputs[1].value,
-      enabled: checkbox.checked
-    });
-  });
-  
-  // Get headers from inputs
-  const headerRows = headersContainer.querySelectorAll('.flex');
-  const currentHeaders: KeyValue[] = [];
-  headerRows.forEach(row => {
-    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
-    currentHeaders.push({
-      key: inputs[0].value,
-      value: inputs[1].value,
-      enabled: checkbox.checked
-    });
-  });
-  
-  // Build body
-  const bodyType = bodyTypeSelect.value as BodyType;
-  let body: Request['body'];
-  
-  if (bodyType === 'none') {
-    body = undefined;
-  } else if (bodyType === 'raw' || bodyType === 'x-www-form-urlencoded') {
-    body = { type: bodyType, raw: bodyRawTextarea.value };
-  } else if (bodyType === 'json') {
-    body = { type: bodyType, json: bodyJsonTextarea.value };
-  } else if (bodyType === 'form-data') {
-    const formRows = bodyFormDataContainer.querySelectorAll('.flex');
-    const formData: KeyValue[] = [];
-    formRows.forEach(row => {
-      const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
-      const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
-      formData.push({
-        key: inputs[0].value,
-        value: inputs[1].value,
-        enabled: checkbox.checked
-      });
-    });
-    body = { type: bodyType, formData };
-  }
-  
-  // Build auth
-  const authType = authTypeSelect.value as AuthType;
-  let auth: Request['auth'];
-  
-  if (authType === 'none') {
-    auth = undefined;
-  } else if (authType === 'basic') {
-    const username = (document.getElementById('auth-basic-username') as HTMLInputElement).value;
-    const password = (document.getElementById('auth-basic-password') as HTMLInputElement).value;
-    auth = { type: authType, basic: { username, password } };
-  } else if (authType === 'bearer') {
-    const token = (document.getElementById('auth-bearer-token') as HTMLInputElement).value;
-    auth = { type: authType, bearer: { token } };
-  } else if (authType === 'api-key') {
-    const key = (document.getElementById('auth-apikey-key') as HTMLInputElement).value;
-    const value = (document.getElementById('auth-apikey-value') as HTMLInputElement).value;
-    const addTo = (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value as 'header' | 'query';
-    auth = { type: authType, apiKey: { key, value, addTo } };
-  }
-  
-  return {
-    id: Date.now().toString(),
-    name: 'Untitled Request',
-    method: currentMethod,
-    url: urlInput.value,
-    headers: currentHeaders,
-    body,
-    auth,
-    queryParams: currentParams,
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-}
-
-// Send Request
 fetchButton?.addEventListener('click', async () => {
   try {
     fetchButton.disabled = true;
     fetchButton.textContent = 'Sending...';
     
-    saveCurrentTab(); // Save immediately before sending
+    saveCurrentTab();
     
-    const request = buildRequest();
-    const response = await window.electron.sendRequest(request);
+    const request = buildRequest(
+      currentMethod,
+      urlInput,
+      paramsContainer,
+      headersContainer,
+      bodyTypeSelect,
+      bodyRawTextarea,
+      bodyJsonTextarea,
+      bodyFormDataContainer,
+      authTypeSelect,
+      currentProject?.id
+    );
     
-    displayResponse(response);
-    saveCurrentTab(); // Save after response
+    const processedRequest = { ...request };
+    processedRequest.url = replaceVariables(request.url, currentProject);
+    
+    const response = await window.electron.sendRequest(processedRequest);
+    
+    lastResponse = response;
+    displayResponse(response, currentFormat, resultDiv, statusCodeSpan, responseTimeSpan, responseSizeSpan);
+    saveCurrentTab();
   } catch (error) {
     console.error(error);
     statusCodeSpan.textContent = 'Error';
@@ -1829,17 +3014,25 @@ fetchButton?.addEventListener('click', async () => {
   }
 });
 
-// Save Request
 saveRequestBtn?.addEventListener('click', async () => {
-  const request = buildRequest();
+  const request = buildRequest(
+    currentMethod,
+    urlInput,
+    paramsContainer,
+    headersContainer,
+    bodyTypeSelect,
+    bodyRawTextarea,
+    bodyJsonTextarea,
+    bodyFormDataContainer,
+    authTypeSelect,
+    currentProject?.id
+  );
   
-  // Use a default name based on method and URL
   try {
     const url = new URL(request.url);
     const urlPath = url.pathname.split('/').filter(p => p).join('_') || url.hostname.replace(/\./g, '_');
     request.name = `${request.method}_${urlPath}`;
   } catch {
-    // If URL is invalid, just use method and timestamp
     request.name = `${request.method}_${Date.now()}`;
   }
   
@@ -1850,7 +3043,6 @@ saveRequestBtn?.addEventListener('click', async () => {
   }
 });
 
-// Load Request
 loadRequestBtn?.addEventListener('click', async () => {
   try {
     const request = await window.electron.importRequest();
@@ -1859,11 +3051,11 @@ loadRequestBtn?.addEventListener('click', async () => {
       return;
     }
     
-    const tab = tabs.find(t => t.id === activeTabId);
+    const tab = tabManager.getActiveTab();
     if (tab) {
       tab.request = request;
       tab.response = null;
-      loadTab(activeTabId);
+      loadTabById(tabManager.getActiveTabId());
     }
     
   } catch (error) {
@@ -1871,7 +3063,6 @@ loadRequestBtn?.addEventListener('click', async () => {
   }
 });
 
-// View History
 viewHistoryBtn?.addEventListener('click', async () => {
   const history = await window.electron.getHistory(20);
   
@@ -1896,11 +3087,11 @@ viewHistoryBtn?.addEventListener('click', async () => {
     `;
     
     item.onclick = () => {
-      const tab = tabs.find(t => t.id === activeTabId);
+      const tab = tabManager.getActiveTab();
       if (tab) {
         tab.request = entry.request;
         tab.response = entry.response;
-        loadTab(activeTabId);
+        loadTabById(tabManager.getActiveTabId());
       }
       historyModal.classList.add('hidden');
     };
@@ -1911,7 +3102,6 @@ viewHistoryBtn?.addEventListener('click', async () => {
   historyModal.classList.remove('hidden');
 });
 
-// Clear history
 clearHistoryBtn?.addEventListener('click', async () => {
   if (confirm('Are you sure you want to clear all history? This cannot be undone.')) {
     await window.electron.clearHistory();
@@ -1919,14 +3109,133 @@ clearHistoryBtn?.addEventListener('click', async () => {
   }
 });
 
-// Close history modal
 closeHistoryBtn?.addEventListener('click', () => {
   historyModal.classList.add('hidden');
 });
 
+projectDashboardBtn?.addEventListener('click', () => {
+  projectModal.classList.remove('hidden');
+  renderProjectListUI();
+});
+
+closeProjectModalBtn?.addEventListener('click', () => {
+  projectModal.classList.add('hidden');
+});
+
+createProjectBtn?.addEventListener('click', () => {
+  openProjectForm();
+});
+
+addProjectVariableBtn?.addEventListener('click', () => {
+  addKeyValue(projectVariables, projectVariablesContainer, () => {});
+});
+
+saveProjectFormBtn?.addEventListener('click', async () => {
+  const name = projectNameInput.value.trim();
+  if (!name) {
+    alert('Project name is required');
+    return;
+  }
+  
+  const variableRows = projectVariablesContainer.querySelectorAll('.flex');
+  const variables: KeyValue[] = [];
+  variableRows.forEach(row => {
+    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
+    variables.push({
+      key: inputs[0].value,
+      value: inputs[1].value,
+      enabled: checkbox.checked
+    });
+  });
+  
+  const project: Project = editingProjectId
+    ? { ...projects.find(p => p.id === editingProjectId)!, updatedAt: Date.now() }
+    : {
+        id: Date.now().toString(),
+        name,
+        folders: [],
+        requests: [],
+        variables: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+  
+  project.name = name;
+  project.description = projectDescInput.value.trim();
+  project.baseUrl = projectBaseUrlInput.value.trim();
+  project.variables = variables;
+  
+  await saveProject(project);
+  
+  projectFormModal.classList.add('hidden');
+  projectModal.classList.remove('hidden');
+  
+  renderProjectListUI();
+});
+
+cancelProjectFormBtn?.addEventListener('click', () => {
+  projectFormModal.classList.add('hidden');
+  projectModal.classList.remove('hidden');
+});
+
+importProjectBtn?.addEventListener('click', async () => {
+  const project = await window.electron.importProject();
+  if (project) {
+    await loadProjects();
+    projectModal.classList.add('hidden');
+  }
+});
+
+saveFolderBtn?.addEventListener('click', () => {
+  const name = folderNameInput.value.trim();
+  if (!name) {
+    alert('Folder name is required');
+    return;
+  }
+  
+  if (!currentProject) return;
+  
+  const newFolder = createFolder(name, currentProject.id, currentFolderParentId || undefined);
+  addFolderToProject(currentProject, newFolder, currentFolderParentId || undefined);
+  
+  markUnsavedChanges();
+  autoSaveProject();
+  renderSidebarUI();
+  folderModal.classList.add('hidden');
+});
+
+cancelFolderBtn?.addEventListener('click', () => {
+  folderModal.classList.add('hidden');
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (hasUnsavedChanges && !autoSaveEnabled) {
+    e.preventDefault();
+    e.returnValue = '';
+    
+    const save = confirm('You have unsaved changes. Do you want to save your project before closing?');
+    if (save && currentProject) {
+      saveProject(currentProject);
+    }
+  }
+});
+
 // Initialize
-createNewTab();
-switchTab('params');
+loadProjects().then(() => {
+  const request: Request = {
+    id: Date.now().toString(),
+    name: 'Untitled Request',
+    method: 'GET',
+    url: '',
+    headers: [],
+    queryParams: [],
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
+  tabManager.createTab(request);
+  switchTab('params');
+});
 </file>
 
 <file path="index.html">
@@ -1944,8 +3253,20 @@ switchTab('params');
   </head>
   <body class="bg-gray-900 text-white">
     <div class="flex h-screen">
+      <!-- Sidebar -->
+      <div class="w-64 bg-gray-800 p-4 overflow-y-auto border-r border-gray-700">
+        <div class="mb-4">
+          <h2 class="text-lg font-bold mb-2">Project</h2>
+          <div class="text-sm text-gray-400 mb-2" id="current-project-name">No Project</div>
+          <button id="project-dashboard" class="w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm">
+            Projects
+          </button>
+        </div>
+        <div id="sidebar-container" class="mt-4"></div>
+      </div>
+
       <!-- Main Content -->
-      <div class="flex-1 flex flex-col p-6">
+      <div class="flex-1 flex flex-col p-6 overflow-hidden">
         <h1 class="text-3xl font-bold mb-4">Req-Rep.io</h1>
         
         <!-- Tabs Bar -->
@@ -1973,11 +3294,19 @@ switchTab('params');
               <div data-method="OPTIONS" class="px-4 py-2 text-purple-600 hover:bg-gray-700 cursor-pointer font-semibold">OPTIONS</div>
             </div>
           </div>
-          <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL">
+          <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL or use {{baseUrl}}">
           <button id="fetch" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-semibold">Send</button>
           <button id="save-request" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">Save</button>
           <button id="load-request" class="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded">Load</button>
           <button id="view-history" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded">History</button>
+        </div>
+
+        <!-- Breadcrumbs and Context -->
+        <div class="mb-3 flex items-center justify-between bg-gray-800 px-4 py-2 rounded">
+          <div id="breadcrumb-container" class="flex items-center"></div>
+          <button id="add-to-project" class="hidden bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
+            + Add to Project
+          </button>
         </div>
         
         <!-- Tabs -->
@@ -2089,6 +3418,93 @@ switchTab('params');
           </div>
         </div>
         <div id="history-container" class="flex-1 overflow-auto"></div>
+      </div>
+    </div>
+
+    <!-- Project Modal -->
+    <div id="project-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-gray-900 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-2xl font-bold">Projects</h2>
+          <div class="flex gap-2">
+            <button id="import-project" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm">Import Project</button>
+            <button id="create-project" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">Create Project</button>
+            <button id="close-project-modal" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+          </div>
+        </div>
+        <div id="project-list" class="flex-1 overflow-auto"></div>
+      </div>
+    </div>
+
+    <!-- Project Form Modal -->
+    <div id="project-form-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-gray-900 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+        <h2 id="project-form-title" class="text-2xl font-bold mb-4">Create New Project</h2>
+        
+        <div class="flex-1 overflow-auto mb-4">
+          <div class="mb-4">
+            <label class="block text-sm font-semibold mb-2">Project Name *</label>
+            <input type="text" id="project-name-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="My Project">
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-semibold mb-2">Description</label>
+            <textarea id="project-desc-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" rows="3" placeholder="Project description"></textarea>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-semibold mb-2">Base URL</label>
+            <input type="text" id="project-baseurl-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="http://localhost:8080">
+            <p class="text-xs text-gray-400 mt-1">Use {{baseUrl}} in your requests to reference this URL</p>
+          </div>
+          
+          <div class="mb-4">
+            <label class="block text-sm font-semibold mb-2">Environment Variables</label>
+            <div id="project-variables-container" class="mb-2"></div>
+            <button id="add-project-variable" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Variable</button>
+            <p class="text-xs text-gray-400 mt-1">Use {{variableName}} in your requests</p>
+          </div>
+        </div>
+        
+        <div class="flex gap-2 justify-end">
+          <button id="cancel-project-form" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Cancel</button>
+          <button id="save-project-form" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">Save Project</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Folder Modal -->
+    <div id="folder-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-gray-900 rounded-lg p-6 max-w-md w-full mx-4">
+        <h2 id="folder-modal-title" class="text-2xl font-bold mb-4">Create New Folder</h2>
+        
+        <div class="mb-4">
+          <label class="block text-sm font-semibold mb-2">Folder Name *</label>
+          <input type="text" id="folder-name-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Authentication">
+        </div>
+        
+        <div class="flex gap-2 justify-end">
+          <button id="cancel-folder" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Cancel</button>
+          <button id="save-folder" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">Create Folder</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Select Folder Modal -->
+    <div id="select-folder-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-gray-900 rounded-lg p-6 max-w-md w-full mx-4 max-h-[60vh] overflow-hidden flex flex-col">
+        <h2 class="text-2xl font-bold mb-4">Select Folder</h2>
+        
+        <div class="flex-1 overflow-auto mb-4">
+          <button id="select-project-root" class="w-full bg-gray-800 hover:bg-gray-700 p-3 rounded mb-2 text-left">
+            📁 <span class="font-semibold">Project Root</span>
+          </button>
+          <div id="folder-tree-container"></div>
+        </div>
+        
+        <div class="flex gap-2 justify-end">
+          <button id="cancel-folder-select" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Cancel</button>
+        </div>
       </div>
     </div>
     

@@ -146,9 +146,28 @@ let pendingRequestToAdd: Request | null = null;
 const breadcrumbContainer = document.getElementById('breadcrumb-container') as HTMLDivElement;
 const addToProjectBtn = document.getElementById('add-to-project') as HTMLButtonElement;
 
+document.getElementById('toggle-bearer-token')?.addEventListener('click', () => {
+  const tokenInput = document.getElementById('auth-bearer-token') as HTMLInputElement;
+  const eyeClosed = document.getElementById('bearer-eye-closed');
+  const eyeOpen = document.getElementById('bearer-eye-open');
+  
+  if (!eyeClosed || !eyeOpen) return;
+  
+  if (tokenInput.type === 'password') {
+    tokenInput.type = 'text';
+    eyeClosed.classList.add('hidden');
+    eyeOpen.classList.remove('hidden');
+  } else {
+    tokenInput.type = 'password';
+    eyeClosed.classList.remove('hidden');
+    eyeOpen.classList.add('hidden');
+  }
+});
+
 // Tab Manager
 const tabManager = new TabManager(tabsContainer, (tabId) => {
   loadTabById(tabId);
+  renderSidebarUI();
 });
 
 // Project Functions
@@ -188,25 +207,10 @@ function debouncedSaveCurrentTab(): void {
   
   saveDebounceTimer = window.setTimeout(() => {
     const tab = tabManager.getActiveTab();
-    if (!tab) return;
-    
-    const currentRequestContext = {
-      id: tab.request.id,
-      projectId: tab.request.projectId,
-      folderId: tab.request.folderId,
-      createdAt: tab.request.createdAt
-    };
     
     saveCurrentTab();
-    
-    // Restore context after save to prevent breadcrumb flash
-    if (tab) {
-      tab.request.id = currentRequestContext.id;
-      tab.request.projectId = currentRequestContext.projectId;
-      tab.request.folderId = currentRequestContext.folderId;
-      tab.request.createdAt = currentRequestContext.createdAt;
-    }
-    
+    markUnsavedChanges();
+    autoSaveProject();
     saveDebounceTimer = null;
   }, 500);
 }
@@ -214,6 +218,8 @@ function debouncedSaveCurrentTab(): void {
 function saveCurrentTab(): void {
   const tab = tabManager.getActiveTab();
   if (!tab) return;
+  
+  const originalRequest = tab.request;
   
   const request = buildRequest(
     currentMethod,
@@ -228,22 +234,48 @@ function saveCurrentTab(): void {
     currentProject?.id
   );
   
-  // Preserve the original request ID and context
-  request.id = tab.request.id;
-  request.projectId = tab.request.projectId;
-  request.folderId = tab.request.folderId;
-  request.createdAt = tab.request.createdAt;
+  // Preserve ALL original request properties
+  request.id = originalRequest.id;
+  request.projectId = originalRequest.projectId;
+  request.folderId = originalRequest.folderId;
+  request.createdAt = originalRequest.createdAt;
+  request.updatedAt = Date.now();
   
+  // Update name based on URL
+  updateRequestName(request);
+  
+  // Update the tab
+  tab.request = request;
   tabManager.updateActiveTab(request, lastResponse);
   
   // Update request in project if it belongs to one
   if (currentProject && request.projectId === currentProject.id) {
     updateRequestInProject(request, currentProject);
+    console.log('Request updated in project:', request.id, request.name);
     markUnsavedChanges();
+    // Re-render sidebar to show updated request
+    renderSidebarUI();
   }
   
   // Update breadcrumbs
   updateBreadcrumbs(request);
+}
+
+function updateRequestName(request: Request): void {
+  if (!request.url) {
+    request.name = 'Untitled Request';
+    return;
+  }
+  
+  try {
+    const url = new URL(request.url);
+    const path = url.pathname.split('/').filter(p => p).pop() || url.hostname;
+    request.name = `${request.method} ${path}`;
+  } catch {
+    // If URL is incomplete, use what we have
+    const urlPart = request.url.split('/').filter(p => p).pop() || request.url;
+    request.name = `${request.method} ${urlPart.substring(0, 30)}`;
+  }
 }
 
 // Add to project button event listener
@@ -507,6 +539,7 @@ function createRequestInProject(): void {
   if (!currentProject) return;
   
   const request = createRequest(currentProject.id);
+  request.name = `New Request ${Date.now()}`;
   addRequestToProject(currentProject, request);
   
   markUnsavedChanges();
@@ -520,6 +553,7 @@ function createRequestInFolder(folderId: string): void {
   if (!currentProject) return;
   
   const request = createRequest(currentProject.id, folderId);
+  request.name = `New Request ${Date.now()}`;
   addRequestToProject(currentProject, request, folderId);
   
   markUnsavedChanges();
@@ -530,9 +564,9 @@ function createRequestInFolder(folderId: string): void {
 }
 
 function loadRequestIntoTab(request: Request): void {
-  const newTabId = tabManager.createTab({ ...request });
   const tab = tabManager.getActiveTab();
   if (tab) {
+    // Load the request into the current active tab
     tab.request = { ...request };
     tab.response = null;
     loadTabById(tabManager.getActiveTabId());
