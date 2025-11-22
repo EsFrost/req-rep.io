@@ -14,7 +14,8 @@ export interface SidebarCallbacks {
 export function renderSidebar(
   container: HTMLDivElement,
   project: Project | null,
-  callbacks: SidebarCallbacks
+  callbacks: SidebarCallbacks,
+  activeRequestId?: string
 ): void {
   container.innerHTML = '';
   
@@ -39,12 +40,12 @@ export function renderSidebar(
   
   // Render folders
   project.folders.forEach(folder => {
-    renderFolder(folder, container, 0, callbacks);
+    renderFolder(folder, container, 0, callbacks, activeRequestId);
   });
   
   // Render root requests
   project.requests.forEach(request => {
-    renderRequest(request, container, 0, callbacks);
+    renderRequest(request, container, 0, callbacks, activeRequestId);
   });
 }
 
@@ -52,7 +53,8 @@ function renderFolder(
   folder: Folder,
   container: HTMLElement,
   depth: number,
-  callbacks: SidebarCallbacks
+  callbacks: SidebarCallbacks,
+  activeRequestId?: string
 ): void {
   const folderDiv = document.createElement('div');
   folderDiv.className = 'mb-2';
@@ -104,11 +106,11 @@ function renderFolder(
   folderContent.className = 'ml-4 mt-1';
   
   folder.subfolders.forEach(subfolder => {
-    renderFolder(subfolder, folderContent, depth + 1, callbacks);
+    renderFolder(subfolder, folderContent, depth + 1, callbacks, activeRequestId);
   });
   
   folder.requests.forEach(request => {
-    renderRequest(request, folderContent, depth + 1, callbacks);
+    renderRequest(request, folderContent, depth + 1, callbacks, activeRequestId);
   });
   
   folderDiv.appendChild(folderContent);
@@ -119,10 +121,15 @@ function renderRequest(
   request: Request,
   container: HTMLElement,
   depth: number,
-  callbacks: SidebarCallbacks
+  callbacks: SidebarCallbacks,
+  activeRequestId?: string
 ): void {
+  const isActive = activeRequestId === request.id;
+  
   const requestDiv = document.createElement('div');
-  requestDiv.className = 'bg-gray-800 p-2 rounded mb-1 cursor-pointer hover:bg-gray-750 flex items-center justify-between';
+  requestDiv.className = `p-2 rounded mb-1 cursor-pointer flex items-center justify-between ${
+    isActive ? 'bg-blue-900 border border-blue-500' : 'bg-gray-800 hover:bg-gray-750'
+  }`;
   requestDiv.style.marginLeft = `${depth * 20}px`;
   
   const methodColor = methodColors[request.method] || 'text-gray-400';
@@ -131,7 +138,7 @@ function renderRequest(
   requestInfo.className = 'flex items-center gap-2 flex-1';
   requestInfo.innerHTML = `
     <span class="font-semibold ${methodColor} text-xs">${request.method}</span>
-    <span class="text-sm text-gray-300">${request.name}</span>
+    <span class="text-sm ${isActive ? 'text-white font-semibold' : 'text-gray-300'}">${request.name}</span>
   `;
   
   const deleteBtn = document.createElement('button');
