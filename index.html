@@ -43,12 +43,14 @@
         <!-- URL Bar -->
         <div class="mb-4 flex items-center gap-3">
           <div class="relative">
+            <!--Change the UI to glass here-->
             <button id="method-button" class="bg-gray-800 text-green-600 font-semibold px-4 py-2 rounded cursor-pointer hover:bg-gray-700 min-w-[120px] text-left flex items-center justify-between gap-3">
               <span id="method-text">GET</span>
               <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="#A9AEC1" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
               </svg>
             </button>
+            <!--Change the UI to glass here-->
             <div id="method-dropdown" class="hidden absolute top-full left-0 mt-1 bg-gray-800 rounded shadow-lg border border-gray-700 min-w-[120px] z-50">
               <div data-method="GET" class="px-4 py-2 text-green-600 hover:bg-gray-700 cursor-pointer font-semibold">GET</div>
               <div data-method="POST" class="px-4 py-2 text-yellow-600 hover:bg-gray-700 cursor-pointer font-semibold">POST</div>
@@ -59,6 +61,7 @@
               <div data-method="OPTIONS" class="px-4 py-2 text-purple-600 hover:bg-gray-700 cursor-pointer font-semibold">OPTIONS</div>
             </div>
           </div>
+          <!--Change the UI to glass here-->
           <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL or use {{baseUrl}}">
           <button id="fetch" class="font-semibold
                 overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
@@ -120,9 +123,11 @@
                 active:duration-10">History</button>
         </div>
 
+        <!--Change the UI to glass here-->
         <!-- Breadcrumbs and Context -->
         <div class="mb-3 flex items-center justify-between bg-gray-800 px-4 py-2 rounded">
           <div id="breadcrumb-container" class="flex items-center"></div>
+          <!--Change the UI to glass here-->
           <button id="add-to-project" class="hidden bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
             + Add to Project
           </button>
@@ -139,15 +144,18 @@
         <!-- Params Panel -->
         <div id="params-panel" class="mb-4">
           <div id="params-container" class="mb-2"></div>
+          <!--Change the UI to glass here-->
           <button id="add-param" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Parameter</button>
         </div>
         
         <!-- Headers Panel -->
         <div id="headers-panel" class="mb-4 hidden">
           <div id="headers-container" class="mb-2"></div>
+          <!--Change the UI to glass here-->
           <button id="add-header" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Header</button>
         </div>
         
+        <!--Change the UI to glass here-->
         <!-- Body Panel -->
         <div id="body-panel" class="mb-4 hidden">
           <select id="body-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
@@ -158,6 +166,7 @@
             <option value="x-www-form-urlencoded">x-www-form-urlencoded</option>
           </select>
           
+          <!--Change the UI to glass here-->
           <div id="body-raw-container" class="hidden">
             <textarea id="body-raw" class="w-full bg-gray-800 text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder="Enter raw body"></textarea>
           </div>
@@ -172,6 +181,7 @@
           </div>
         </div>
         
+        <!--Change the UI to glass here-->
         <!-- Auth Panel -->
         <div id="auth-panel" class="mb-4 hidden">
           <select id="auth-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
@@ -213,6 +223,7 @@
           </div>
         </div>
         
+        <!--Change the UI to glass here-->
         <!-- Response Section -->
         <div class="bg-gray-800 rounded-lg p-4 flex flex-col min-h-0 max-w-[calc(100vw-3rem)]">
           <div class="flex items-center justify-between mb-3">
@@ -224,6 +235,7 @@
               <span class="text-gray-400">Size:</span>
               <span id="response-size" class="text-gray-500">-</span>
             </div>
+            <!--Change the UI to glass here-->
             <select id="format-select" class="bg-gray-700 text-white p-2 rounded border border-gray-600 cursor-pointer">
               <option value="raw">Raw</option>
               <option value="json">JSON</option>
@@ -237,16 +249,20 @@
       </div>
     </div>
     
+    <!--Change the UI to glass here-->
     <!-- History Modal -->
     <div id="history-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-gray-900 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-2xl font-bold">Request History</h2>
           <div class="flex gap-2">
+            <!--Change the UI to glass here-->
             <button id="clear-history" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">Clear History</button>
+            <!--Change the UI to glass here-->
             <button id="close-history" class="text-gray-400 hover:text-white text-2xl">&times;</button>
           </div>
         </div>
+        <!--Change the UI to glass here-->
         <div id="history-container" class="flex-1 overflow-auto"></div>
       </div>
     </div>
@@ -256,9 +272,13 @@
       <div class="bg-gray-900 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-2xl font-bold">Projects</h2>
+          <!--Change the UI to glass here-->
           <div class="flex gap-2">
+            <!--Change the UI to glass here-->
             <button id="import-project" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm">Import Project</button>
+            <!--Change the UI to glass here-->
             <button id="create-project" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">Create Project</button>
+            <!--Change the UI to glass here-->
             <button id="close-project-modal" class="text-gray-400 hover:text-white text-2xl">&times;</button>
           </div>
         </div>
@@ -274,16 +294,19 @@
         <div class="flex-1 overflow-auto mb-4">
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Project Name *</label>
+            <!--Change the UI to glass here-->
             <input type="text" id="project-name-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="My Project">
           </div>
           
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Description</label>
+            <!--Change the UI to glass here-->
             <textarea id="project-desc-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" rows="3" placeholder="Project description"></textarea>
           </div>
           
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Base URL</label>
+            <!--Change the UI to glass here-->
             <input type="text" id="project-baseurl-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="http://localhost:8080">
             <p class="text-xs text-gray-400 mt-1">Use {{baseUrl}} in your requests to reference this URL</p>
           </div>
@@ -291,7 +314,9 @@
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Environment Variables</label>
             <div id="project-variables-container" class="mb-2"></div>
+            <!--Change the UI to glass here-->
             <button id="add-project-variable" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Variable</button>
+            <!--Change the UI to glass here-->
             <p class="text-xs text-gray-400 mt-1">Use {{variableName}} in your requests. Mark sensitive data (tokens, passwords) with the lock icon.</p>
           </div>
         </div>
@@ -326,13 +351,16 @@
         <h2 class="text-2xl font-bold mb-4">Select Folder</h2>
         
         <div class="flex-1 overflow-auto mb-4">
+          <!--Change the UI to glass here-->
           <button id="select-project-root" class="w-full bg-gray-800 hover:bg-gray-700 p-3 rounded mb-2 text-left">
             📁 <span class="font-semibold">Project Root</span>
           </button>
+          <!--Change the UI to glass here-->
           <div id="folder-tree-container"></div>
         </div>
         
         <div class="flex gap-2 justify-end">
+          <!--Change the UI to glass here-->
           <button id="cancel-folder-select" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Cancel</button>
         </div>
       </div>
