@@ -1241,27 +1241,6 @@ export class HistoryStorage {
 }
 </file>
 
-<file path="src/main/window.ts">
-import { BrowserWindow } from 'electron';
-import path from 'path';
-
-export const createWindow = (): BrowserWindow => {
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  });
-
-  win.loadFile('index.html');
-  
-  return win;
-};
-</file>
-
 <file path="src/renderer/helpers/project-renderer.ts">
 import { Project } from '../../shared/types';
 
@@ -1813,6 +1792,36 @@ module.exports = {
 }
 </file>
 
+<file path="src/main/window.ts">
+import { BrowserWindow, Menu, ipcMain } from 'electron';
+import path from 'path';
+
+export const createWindow = (): BrowserWindow => {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  // Hide the menu by default
+  win.setMenuBarVisibility(false);
+  
+  win.loadFile('index.html');
+
+  // Handle menu toggle
+  ipcMain.on('toggle-menu', () => {
+    const isVisible = win.isMenuBarVisible();
+    win.setMenuBarVisibility(!isVisible);
+  });
+  
+  return win;
+};
+</file>
+
 <file path="src/renderer/helpers/key-value-renderer.ts">
 import { KeyValue } from '../../shared/types';
 
@@ -2194,59 +2203,6 @@ Any and all suggestions are welcome.
 }
 </file>
 
-<file path="src/preload/index.ts">
-import { contextBridge, ipcRenderer } from 'electron';
-import { Request, HttpResponse, Collection, Environment, HistoryEntry, Project } from '../shared/types';
-
-contextBridge.exposeInMainWorld('electron', {
-  // Request
-  sendRequest: (request: Request): Promise<HttpResponse> => 
-    ipcRenderer.invoke('request:send', request),
-  
-  // Collections
-  saveCollection: (collection: Collection): Promise<void> => 
-    ipcRenderer.invoke('collection:save', collection),
-  loadCollections: (): Promise<Collection[]> => 
-    ipcRenderer.invoke('collection:load'),
-  deleteCollection: (id: string): Promise<void> => 
-    ipcRenderer.invoke('collection:delete', id),
-  
-  // Projects
-  saveProject: (project: Project): Promise<void> => 
-    ipcRenderer.invoke('project:save', project),
-  loadProjects: (): Promise<Project[]> => 
-    ipcRenderer.invoke('project:load'),
-  deleteProject: (id: string): Promise<void> => 
-    ipcRenderer.invoke('project:delete', id),
-  exportProject: (project: Project): Promise<void> => 
-    ipcRenderer.invoke('project:export', project),
-  importProject: (): Promise<Project | null> => 
-    ipcRenderer.invoke('project:import'),
-  
-  // Environments
-  saveEnvironment: (environment: Environment): Promise<void> => 
-    ipcRenderer.invoke('environment:save', environment),
-  loadEnvironments: (): Promise<Environment[]> => 
-    ipcRenderer.invoke('environment:load'),
-  deleteEnvironment: (id: string): Promise<void> => 
-    ipcRenderer.invoke('environment:delete', id),
-  setActiveEnvironment: (id: string): Promise<void> => 
-    ipcRenderer.invoke('environment:setActive', id),
-  
-  // History
-  getHistory: (limit?: number): Promise<HistoryEntry[]> => 
-    ipcRenderer.invoke('history:get', limit),
-  clearHistory: (): Promise<void> => 
-    ipcRenderer.invoke('history:clear'),
-  
-  // Export/Import Request
-  exportRequest: (request: Request): Promise<void> => 
-    ipcRenderer.invoke('request:export', request),
-  importRequest: (): Promise<Request | null> => 
-    ipcRenderer.invoke('request:import'),
-});
-</file>
-
 <file path="src/styles/input.css">
 @import 'highlight.js/styles/atom-one-dark.css';
 
@@ -2298,6 +2254,63 @@ contextBridge.exposeInMainWorld('electron', {
     line-height: 1.25rem;
   }
 }
+</file>
+
+<file path="src/preload/index.ts">
+import { contextBridge, ipcRenderer } from 'electron';
+import { Request, HttpResponse, Collection, Environment, HistoryEntry, Project } from '../shared/types';
+
+contextBridge.exposeInMainWorld('electron', {
+
+  // Toggle menu, obviously
+  toggleMenu: () => ipcRenderer.send('toggle-menu'),
+
+  // Request
+  sendRequest: (request: Request): Promise<HttpResponse> => 
+    ipcRenderer.invoke('request:send', request),
+  
+  // Collections
+  saveCollection: (collection: Collection): Promise<void> => 
+    ipcRenderer.invoke('collection:save', collection),
+  loadCollections: (): Promise<Collection[]> => 
+    ipcRenderer.invoke('collection:load'),
+  deleteCollection: (id: string): Promise<void> => 
+    ipcRenderer.invoke('collection:delete', id),
+  
+  // Projects
+  saveProject: (project: Project): Promise<void> => 
+    ipcRenderer.invoke('project:save', project),
+  loadProjects: (): Promise<Project[]> => 
+    ipcRenderer.invoke('project:load'),
+  deleteProject: (id: string): Promise<void> => 
+    ipcRenderer.invoke('project:delete', id),
+  exportProject: (project: Project): Promise<void> => 
+    ipcRenderer.invoke('project:export', project),
+  importProject: (): Promise<Project | null> => 
+    ipcRenderer.invoke('project:import'),
+  
+  // Environments
+  saveEnvironment: (environment: Environment): Promise<void> => 
+    ipcRenderer.invoke('environment:save', environment),
+  loadEnvironments: (): Promise<Environment[]> => 
+    ipcRenderer.invoke('environment:load'),
+  deleteEnvironment: (id: string): Promise<void> => 
+    ipcRenderer.invoke('environment:delete', id),
+  setActiveEnvironment: (id: string): Promise<void> => 
+    ipcRenderer.invoke('environment:setActive', id),
+  
+  // History
+  getHistory: (limit?: number): Promise<HistoryEntry[]> => 
+    ipcRenderer.invoke('history:get', limit),
+  clearHistory: (): Promise<void> => 
+    ipcRenderer.invoke('history:clear'),
+  
+  // Export/Import Request
+  exportRequest: (request: Request): Promise<void> => 
+    ipcRenderer.invoke('request:export', request),
+  importRequest: (): Promise<Request | null> => 
+    ipcRenderer.invoke('request:import'),
+});
 </file>
 
 <file path="src/shared/types.ts">
@@ -2699,7 +2712,6 @@ export const registerHandlers = (): void => {
 - Fix any missing UI elements
 - Fix any UI elements that are not working / bugging
 
-- Hide the default electron menu <- Start with this
 - Add icons
 
 ## Website :
@@ -2712,7 +2724,7 @@ export const registerHandlers = (): void => {
 
 - Try to add localization
 
-## Problems :
+## Problems : <- Start here
 
 - Opening a new tab while having selected a project puts it automatically in the project
 
@@ -2722,7 +2734,7 @@ export const registerHandlers = (): void => {
 <file path="package.json">
 {
   "name": "req-rep.io-electron",
-  "version": "0.1.8-a",
+  "version": "0.1.9-a",
   "description": "App to test API endpoints using curl and electron",
   "license": "ISC",
   "author": "Sigmund Frost",
@@ -2798,6 +2810,7 @@ declare global {
       clearHistory: () => Promise<void>;
       exportRequest: (request: Request) => Promise<void>;
       importRequest: () => Promise<Request | null>;
+      toggleMenu: () => void;
     };
   }
 }
@@ -2917,6 +2930,26 @@ let pendingRequestToAdd: Request | null = null;
 // Breadcrumbs
 const breadcrumbContainer = document.getElementById('breadcrumb-container') as HTMLDivElement;
 const addToProjectBtn = document.getElementById('add-to-project') as HTMLButtonElement;
+
+// Toggle menu elements
+const hamburgerIcon = document.getElementById('hamburger-icon');
+const closeIcon = document.getElementById('close-icon');
+let menuVisible = false;
+
+
+// Event listener for menu toggle
+document.getElementById('toggle-menu')?.addEventListener('click', () => {
+  window.electron.toggleMenu();
+  menuVisible = !menuVisible;
+  
+  if (menuVisible) {
+    hamburgerIcon?.classList.add('hidden');
+    closeIcon?.classList.remove('hidden');
+  } else {
+    hamburgerIcon?.classList.remove('hidden');
+    closeIcon?.classList.add('hidden');
+  }
+});
 
 document.getElementById('toggle-bearer-token')?.addEventListener('click', () => {
   const tokenInput = document.getElementById('auth-bearer-token') as HTMLInputElement;
@@ -3761,6 +3794,16 @@ loadProjects().then(() => {
     <link href="./node_modules/highlight.js/styles/atom-one-dark.css" rel="stylesheet">
   </head>
   <body class="bg-gray-900 text-white">
+    <button id="toggle-menu" class="p-2 hover:bg-gray-800 rounded absolute top-0 right-0">
+      <!-- Hamburger icon (shown by default) -->
+      <svg id="hamburger-icon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+      </svg>
+      <!-- X icon (hidden by default) -->
+      <svg id="close-icon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+      </svg>
+    </button>
     <div class="flex h-screen">
       <!-- Sidebar -->
       <div class="w-64 p-4 bg-[rgba(7,14,29,0.5)] overflow-y-auto border-gray-700

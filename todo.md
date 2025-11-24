@@ -28,7 +28,7 @@
 
 - Try to add localization
 
-## Problems :
+## Problems : <- Start here
 
 - Opening a new tab while having selected a project puts it automatically in the project
 
