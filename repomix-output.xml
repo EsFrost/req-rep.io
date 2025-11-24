@@ -48,10 +48,12 @@ readme.md
 src/main/index.ts
 src/main/ipc/handlers.ts
 src/main/ipc/request-handler.ts
+src/main/security/encryption.ts
 src/main/storage/collections.ts
 src/main/storage/environments.ts
 src/main/storage/history.ts
 src/main/storage/projects.ts
+src/main/storage/secure-projects.ts
 src/main/window.ts
 src/preload/index.ts
 src/renderer/components/EnvironmentSelector.ts
@@ -110,6 +112,98 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </file>
 
+<file path="src/main/security/encryption.ts">
+import { safeStorage } from 'electron';
+import * as crypto from 'crypto';
+
+export class SecureStorage {
+  // Check if encryption is available
+  static isEncryptionAvailable(): boolean {
+    return safeStorage.isEncryptionAvailable();
+  }
+
+  // Encrypt sensitive data using OS keychain
+  static encrypt(plainText: string): Buffer {
+    if (!this.isEncryptionAvailable()) {
+      console.warn('Encryption not available, storing in plain text');
+      return Buffer.from(plainText);
+    }
+    return safeStorage.encryptString(plainText);
+  }
+
+  // Decrypt sensitive data
+  static decrypt(encrypted: Buffer): string {
+    if (!this.isEncryptionAvailable()) {
+      return encrypted.toString();
+    }
+    return safeStorage.decryptString(encrypted);
+  }
+
+  // For storing in JSON files, convert Buffer to base64
+  static encryptToBase64(plainText: string): string {
+    const encrypted = this.encrypt(plainText);
+    return encrypted.toString('base64');
+  }
+
+  static decryptFromBase64(base64: string): string {
+    const buffer = Buffer.from(base64, 'base64');
+    return this.decrypt(buffer);
+  }
+}
+
+// Alternative: Custom encryption using a master password
+export class CustomEncryption {
+  private static algorithm = 'aes-256-gcm';
+  
+  // Derive key from master password
+  private static deriveKey(password: string, salt: Buffer): Buffer {
+    return crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha256');
+  }
+
+  static encrypt(text: string, masterPassword: string): string {
+    const salt = crypto.randomBytes(16);
+    const key = this.deriveKey(masterPassword, salt);
+    const iv = crypto.randomBytes(16);
+    
+    const cipher = crypto.createCipheriv(this.algorithm, key, iv) as crypto.CipherGCM;
+    let encrypted = cipher.update(text, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    
+    const authTag = cipher.getAuthTag();
+    
+    // Combine salt, iv, authTag, and encrypted data
+    return JSON.stringify({
+      salt: salt.toString('hex'),
+      iv: iv.toString('hex'),
+      authTag: authTag.toString('hex'),
+      data: encrypted
+    });
+  }
+
+  static decrypt(encryptedData: string, masterPassword: string): string {
+    const { salt, iv, authTag, data } = JSON.parse(encryptedData);
+    
+    const key = this.deriveKey(
+      masterPassword,
+      Buffer.from(salt, 'hex')
+    );
+    
+    const decipher = crypto.createDecipheriv(
+      this.algorithm,
+      key,
+      Buffer.from(iv, 'hex')
+    ) as crypto.DecipherGCM;
+    
+    decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+    
+    let decrypted = decipher.update(data, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    
+    return decrypted;
+  }
+}
+</file>
+
 <file path="src/main/storage/projects.ts">
 import { app } from 'electron';
 import * as fs from 'fs';
@@ -156,6 +250,194 @@ export class ProjectStorage {
   delete(id: string): void {
     const projects = this.loadAll().filter(p => p.id !== id);
     fs.writeFileSync(this.storagePath, JSON.stringify(projects, null, 2));
+  }
+  
+  get(id: string): Project | null {
+    const projects = this.loadAll();
+    return projects.find(p => p.id === id) || null;
+  }
+}
+</file>
+
+<file path="src/main/storage/secure-projects.ts">
+import { app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Project, Auth } from '../../shared/types';
+import { SecureStorage } from '../security/encryption';
+
+export class SecureProjectStorage {
+  private storagePath: string;
+  
+  constructor() {
+    const userDataPath = app.getPath('userData');
+    this.storagePath = path.join(userDataPath, 'projects.json');
+    this.ensureStorageFile();
+  }
+  
+  private ensureStorageFile(): void {
+    if (!fs.existsSync(this.storagePath)) {
+        fs.writeFileSync(this.storagePath, JSON.stringify([]));
+        
+        // Set file permissions to 600 (owner read/write only)
+        if (process.platform !== 'win32') {
+        fs.chmodSync(this.storagePath, 0o600);
+        }
+    }
+    }
+
+  // Encrypt sensitive auth data before saving
+  private encryptAuth(auth?: Auth): any {
+    if (!auth) return undefined;
+
+    const encrypted = { ...auth };
+    
+    if (auth.type === 'basic' && auth.basic) {
+      encrypted.basic = {
+        username: auth.basic.username,
+        password: SecureStorage.encryptToBase64(auth.basic.password)
+      };
+    } else if (auth.type === 'bearer' && auth.bearer) {
+      encrypted.bearer = {
+        token: SecureStorage.encryptToBase64(auth.bearer.token)
+      };
+    } else if (auth.type === 'api-key' && auth.apiKey) {
+      encrypted.apiKey = {
+        ...auth.apiKey,
+        value: SecureStorage.encryptToBase64(auth.apiKey.value)
+      };
+    }
+    
+    return encrypted;
+  }
+
+  // Decrypt sensitive auth data after loading
+  private decryptAuth(auth?: any): Auth | undefined {
+    if (!auth) return undefined;
+
+    const decrypted = { ...auth };
+    
+    try {
+      if (auth.type === 'basic' && auth.basic) {
+        decrypted.basic = {
+          username: auth.basic.username,
+          password: SecureStorage.decryptFromBase64(auth.basic.password)
+        };
+      } else if (auth.type === 'bearer' && auth.bearer) {
+        decrypted.bearer = {
+          token: SecureStorage.decryptFromBase64(auth.bearer.token)
+        };
+      } else if (auth.type === 'api-key' && auth.apiKey) {
+        decrypted.apiKey = {
+          ...auth.apiKey,
+          value: SecureStorage.decryptFromBase64(auth.apiKey.value)
+        };
+      }
+    } catch (error) {
+      console.error('Failed to decrypt auth data:', error);
+    }
+    
+    return decrypted;
+  }
+
+  // Encrypt a project before saving
+  private encryptProject(project: Project): any {
+    const encrypted = { ...project };
+    
+    // Encrypt all request auth data
+    encrypted.requests = project.requests.map(req => ({
+      ...req,
+      auth: this.encryptAuth(req.auth)
+    }));
+    
+    // Encrypt requests in folders recursively
+    const encryptFolders = (folders: any[]): any[] => {
+      return folders.map(folder => ({
+        ...folder,
+        requests: folder.requests.map((req: any) => ({
+          ...req,
+          auth: this.encryptAuth(req.auth)
+        })),
+        subfolders: encryptFolders(folder.subfolders)
+      }));
+    };
+    
+    encrypted.folders = encryptFolders(project.folders);
+    
+    // Encrypt sensitive variables
+    encrypted.variables = project.variables.map(v => ({
+      ...v,
+      value: v.sensitive ? SecureStorage.encryptToBase64(v.value) : v.value
+    }));
+    
+    return encrypted;
+  }
+
+  // Decrypt a project after loading
+  private decryptProject(project: any): Project {
+    const decrypted = { ...project };
+    
+    // Decrypt all request auth data
+    decrypted.requests = project.requests.map((req: any) => ({
+      ...req,
+      auth: this.decryptAuth(req.auth)
+    }));
+    
+    // Decrypt requests in folders recursively
+    const decryptFolders = (folders: any[]): any[] => {
+      return folders.map(folder => ({
+        ...folder,
+        requests: folder.requests.map((req: any) => ({
+          ...req,
+          auth: this.decryptAuth(req.auth)
+        })),
+        subfolders: decryptFolders(folder.subfolders)
+      }));
+    };
+    
+    decrypted.folders = decryptFolders(project.folders);
+    
+    // Decrypt sensitive variables
+    decrypted.variables = project.variables.map((v: any) => ({
+      ...v,
+      value: v.sensitive ? SecureStorage.decryptFromBase64(v.value) : v.value
+    }));
+    
+    return decrypted;
+  }
+  
+  loadAll(): Project[] {
+    try {
+      const data = fs.readFileSync(this.storagePath, 'utf-8');
+      const projects = JSON.parse(data);
+      return projects.map((p: any) => this.decryptProject(p));
+    } catch {
+      return [];
+    }
+  }
+  
+  save(project: Project): void {
+    const projects = this.loadAll();
+    const index = projects.findIndex(p => p.id === project.id);
+    
+    const updatedProject = { ...project, updatedAt: Date.now() };
+    
+    if (index >= 0) {
+      projects[index] = updatedProject;
+    } else {
+      projects.push(updatedProject);
+    }
+    
+    // Encrypt before saving
+    const encryptedProjects = projects.map(p => this.encryptProject(p));
+    
+    fs.writeFileSync(this.storagePath, JSON.stringify(encryptedProjects, null, 2));
+  }
+  
+  delete(id: string): void {
+    const projects = this.loadAll().filter(p => p.id !== id);
+    const encryptedProjects = projects.map(p => this.encryptProject(p));
+    fs.writeFileSync(this.storagePath, JSON.stringify(encryptedProjects, null, 2));
   }
   
   get(id: string): Project | null {
@@ -289,84 +571,6 @@ export function renderFolderTree(
       renderFolderTree(container, folder.subfolders, onSelect, depth + 1);
     }
   });
-}
-</file>
-
-<file path="src/renderer/helpers/key-value-renderer.ts">
-import { KeyValue } from '../../shared/types';
-
-export function createKeyValueRow(
-  key: string = '',
-  value: string = '',
-  enabled: boolean = true,
-  onDelete: () => void,
-  onChange?: () => void
-): HTMLDivElement {
-  const row = document.createElement('div');
-  row.className = 'flex gap-2 items-center mb-2';
-  
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = enabled;
-  checkbox.className = 'w-5 h-5';
-  if (onChange) {
-    checkbox.addEventListener('change', onChange);
-  }
-  
-  const keyInput = document.createElement('input');
-  keyInput.type = 'text';
-  keyInput.value = key;
-  keyInput.placeholder = 'Key';
-  keyInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
-  if (onChange) {
-    keyInput.addEventListener('input', onChange);
-  }
-  
-  const valueInput = document.createElement('input');
-  valueInput.type = 'text';
-  valueInput.value = value;
-  valueInput.placeholder = 'Value';
-  valueInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
-  if (onChange) {
-    valueInput.addEventListener('input', onChange);
-  }
-  
-  const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = '×';
-  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-xl font-bold';
-  deleteBtn.onclick = onDelete;
-  
-  row.appendChild(checkbox);
-  row.appendChild(keyInput);
-  row.appendChild(valueInput);
-  row.appendChild(deleteBtn);
-  
-  return row;
-}
-
-export function renderKeyValueList(
-  container: HTMLDivElement,
-  items: KeyValue[],
-  onUpdate: () => void
-): void {
-  container.innerHTML = '';
-  items.forEach((item, index) => {
-    const row = createKeyValueRow(item.key, item.value, item.enabled, () => {
-      items.splice(index, 1);
-      renderKeyValueList(container, items, onUpdate);
-      onUpdate();
-    }, onUpdate);
-    container.appendChild(row);
-  });
-}
-
-export function addKeyValue(
-  items: KeyValue[],
-  container: HTMLDivElement,
-  onUpdate: () => void
-): void {
-  items.push({ key: '', value: '', enabled: true });
-  renderKeyValueList(container, items, onUpdate);
 }
 </file>
 
@@ -658,70 +862,6 @@ export function buildRequest(
 }
 </file>
 
-<file path="src/renderer/helpers/request-context.ts">
-import { Request, Project } from '../../shared/types';
-import { findFolder, addRequestToProject } from './project-manager';
-
-export interface RequestContext {
-  request: Request;
-  projectId?: string;
-  folderId?: string;
-  isInProject: boolean;
-}
-
-export function getRequestContext(request: Request): RequestContext {
-  return {
-    request,
-    projectId: request.projectId,
-    folderId: request.folderId,
-    isInProject: !!request.projectId
-  };
-}
-
-export function saveRequestToProject(
-  request: Request,
-  project: Project,
-  folderId?: string
-): void {
-  // Remove request from old location if it exists
-  if (request.folderId) {
-    const oldFolder = findFolder(project.folders, request.folderId);
-    if (oldFolder) {
-      oldFolder.requests = oldFolder.requests.filter(r => r.id !== request.id);
-    }
-  } else {
-    project.requests = project.requests.filter(r => r.id !== request.id);
-  }
-  
-  // Update request context
-  request.projectId = project.id;
-  request.folderId = folderId;
-  
-  // Add to new location
-  addRequestToProject(project, request, folderId);
-}
-
-export function updateRequestInProject(
-  request: Request,
-  project: Project
-): void {
-  if (request.folderId) {
-    const folder = findFolder(project.folders, request.folderId);
-    if (folder) {
-      const index = folder.requests.findIndex(r => r.id === request.id);
-      if (index >= 0) {
-        folder.requests[index] = request;
-      }
-    }
-  } else {
-    const index = project.requests.findIndex(r => r.id === request.id);
-    if (index >= 0) {
-      project.requests[index] = request;
-    }
-  }
-}
-</file>
-
 <file path="src/renderer/helpers/response-handler.ts">
 import hljs from 'highlight.js';
 import { HttpResponse } from '../../shared/types';
@@ -830,161 +970,6 @@ export const displayResponse = (
   responseTimeSpan.textContent = `${response.time.toFixed(0)}ms`;
   responseSizeSpan.textContent = `${(response.size / 1024).toFixed(2)}KB`;
 };
-</file>
-
-<file path="src/renderer/helpers/sidebar-renderer.ts">
-import { Project, Folder, Request } from '../../shared/types';
-import { methodColors } from './request-builder';
-
-export interface SidebarCallbacks {
-  onNewFolder: () => void;
-  onNewRequest: () => void;
-  onAddRequestToFolder: (folderId: string) => void;
-  onAddSubfolder: (parentId: string) => void;
-  onDeleteFolder: (folderId: string) => void;
-  onDeleteRequest: (requestId: string) => void;
-  onLoadRequest: (request: Request) => void;
-}
-
-export function renderSidebar(
-  container: HTMLDivElement,
-  project: Project | null,
-  callbacks: SidebarCallbacks
-): void {
-  container.innerHTML = '';
-  
-  if (!project) {
-    container.innerHTML = '<div class="text-gray-400 text-center py-4 text-sm">Select a project to view its contents</div>';
-    return;
-  }
-  
-  // Add New Folder Button
-  const newFolderBtn = document.createElement('button');
-  newFolderBtn.className = 'w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded mb-4 text-sm';
-  newFolderBtn.textContent = '+ New Folder';
-  newFolderBtn.onclick = callbacks.onNewFolder;
-  container.appendChild(newFolderBtn);
-  
-  // Add New Request Button
-  const newRequestBtn = document.createElement('button');
-  newRequestBtn.className = 'w-full bg-green-600 hover:bg-green-700 px-3 py-2 rounded mb-4 text-sm';
-  newRequestBtn.textContent = '+ New Request';
-  newRequestBtn.onclick = callbacks.onNewRequest;
-  container.appendChild(newRequestBtn);
-  
-  // Render folders
-  project.folders.forEach(folder => {
-    renderFolder(folder, container, 0, callbacks);
-  });
-  
-  // Render root requests
-  project.requests.forEach(request => {
-    renderRequest(request, container, 0, callbacks);
-  });
-}
-
-function renderFolder(
-  folder: Folder,
-  container: HTMLElement,
-  depth: number,
-  callbacks: SidebarCallbacks
-): void {
-  const folderDiv = document.createElement('div');
-  folderDiv.className = 'mb-2';
-  folderDiv.style.marginLeft = `${depth * 20}px`;
-  
-  const folderHeader = document.createElement('div');
-  folderHeader.className = 'flex items-center justify-between bg-gray-800 p-2 rounded cursor-pointer hover:bg-gray-750';
-  
-  const folderName = document.createElement('div');
-  folderName.className = 'flex items-center gap-2';
-  folderName.innerHTML = `<span>📁</span><span class="text-sm">${folder.name}</span>`;
-  
-  const folderActions = document.createElement('div');
-  folderActions.className = 'flex gap-1';
-  
-  const addRequestBtn = document.createElement('button');
-  addRequestBtn.textContent = '+';
-  addRequestBtn.className = 'bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs';
-  addRequestBtn.onclick = (e) => {
-    e.stopPropagation();
-    callbacks.onAddRequestToFolder(folder.id);
-  };
-  
-  const addSubfolderBtn = document.createElement('button');
-  addSubfolderBtn.textContent = '📁';
-  addSubfolderBtn.className = 'bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs';
-  addSubfolderBtn.onclick = (e) => {
-    e.stopPropagation();
-    callbacks.onAddSubfolder(folder.id);
-  };
-  
-  const deleteFolderBtn = document.createElement('button');
-  deleteFolderBtn.textContent = '×';
-  deleteFolderBtn.className = 'bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs';
-  deleteFolderBtn.onclick = (e) => {
-    e.stopPropagation();
-    callbacks.onDeleteFolder(folder.id);
-  };
-  
-  folderActions.appendChild(addRequestBtn);
-  folderActions.appendChild(addSubfolderBtn);
-  folderActions.appendChild(deleteFolderBtn);
-  
-  folderHeader.appendChild(folderName);
-  folderHeader.appendChild(folderActions);
-  folderDiv.appendChild(folderHeader);
-  
-  const folderContent = document.createElement('div');
-  folderContent.className = 'ml-4 mt-1';
-  
-  folder.subfolders.forEach(subfolder => {
-    renderFolder(subfolder, folderContent, depth + 1, callbacks);
-  });
-  
-  folder.requests.forEach(request => {
-    renderRequest(request, folderContent, depth + 1, callbacks);
-  });
-  
-  folderDiv.appendChild(folderContent);
-  container.appendChild(folderDiv);
-}
-
-function renderRequest(
-  request: Request,
-  container: HTMLElement,
-  depth: number,
-  callbacks: SidebarCallbacks
-): void {
-  const requestDiv = document.createElement('div');
-  requestDiv.className = 'bg-gray-800 p-2 rounded mb-1 cursor-pointer hover:bg-gray-750 flex items-center justify-between';
-  requestDiv.style.marginLeft = `${depth * 20}px`;
-  
-  const methodColor = methodColors[request.method] || 'text-gray-400';
-  
-  const requestInfo = document.createElement('div');
-  requestInfo.className = 'flex items-center gap-2 flex-1';
-  requestInfo.innerHTML = `
-    <span class="font-semibold ${methodColor} text-xs">${request.method}</span>
-    <span class="text-sm text-gray-300">${request.name}</span>
-  `;
-  
-  const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = '×';
-  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs';
-  deleteBtn.onclick = (e) => {
-    e.stopPropagation();
-    callbacks.onDeleteRequest(request.id);
-  };
-  
-  requestDiv.onclick = () => {
-    callbacks.onLoadRequest(request);
-  };
-  
-  requestDiv.appendChild(requestInfo);
-  requestDiv.appendChild(deleteBtn);
-  container.appendChild(requestDiv);
-}
 </file>
 
 <file path="src/renderer/helpers/tab-manager.ts">
@@ -1587,6 +1572,196 @@ export const createWindow = (): BrowserWindow => {
 };
 </file>
 
+<file path="src/renderer/helpers/key-value-renderer.ts">
+import { KeyValue } from '../../shared/types';
+
+export function createKeyValueRow(
+  key: string = '',
+  value: string = '',
+  enabled: boolean = true,
+  onDelete: () => void,
+  onChange?: () => void,
+  sensitive: boolean = false, // NEW parameter
+  showSensitiveToggle: boolean = false // NEW parameter
+): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'flex gap-2 items-center mb-2';
+  
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = enabled;
+  checkbox.className = 'w-5 h-5';
+  if (onChange) {
+    checkbox.addEventListener('change', onChange);
+  }
+  
+  const keyInput = document.createElement('input');
+  keyInput.type = 'text';
+  keyInput.value = key;
+  keyInput.placeholder = 'Key';
+  keyInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
+  if (onChange) {
+    keyInput.addEventListener('input', onChange);
+  }
+  
+  const valueInput = document.createElement('input');
+  valueInput.type = sensitive ? 'password' : 'text';
+  valueInput.value = value;
+  valueInput.placeholder = 'Value';
+  valueInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
+  if (onChange) {
+    valueInput.addEventListener('input', onChange);
+  }
+  
+  // Add sensitive toggle if needed
+  if (showSensitiveToggle) {
+    const sensitiveBtn = document.createElement('button');
+    sensitiveBtn.type = 'button';
+    sensitiveBtn.className = sensitive 
+      ? 'bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-xl'
+      : 'bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-xl';
+    sensitiveBtn.textContent = '🔒';
+    sensitiveBtn.title = 'Mark as sensitive (encrypted storage)';
+    sensitiveBtn.onclick = () => {
+      const newSensitive = !sensitive;
+      sensitiveBtn.className = newSensitive
+        ? 'bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-xl'
+        : 'bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-xl';
+      valueInput.type = newSensitive ? 'password' : 'text';
+      if (onChange) onChange();
+    };
+    row.appendChild(sensitiveBtn);
+  }
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '×';
+  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-xl font-bold';
+  deleteBtn.onclick = onDelete;
+  
+  row.appendChild(checkbox);
+  row.appendChild(keyInput);
+  row.appendChild(valueInput);
+  row.appendChild(deleteBtn);
+  
+  return row;
+}
+
+export function renderKeyValueList(
+  container: HTMLDivElement,
+  items: KeyValue[],
+  onUpdate: () => void
+): void {
+  container.innerHTML = '';
+  items.forEach((item, index) => {
+    const row = createKeyValueRow(item.key, item.value, item.enabled, () => {
+      items.splice(index, 1);
+      renderKeyValueList(container, items, onUpdate);
+      onUpdate();
+    }, onUpdate);
+    container.appendChild(row);
+  });
+}
+
+export function addKeyValue(
+  items: KeyValue[],
+  container: HTMLDivElement,
+  onUpdate: () => void
+): void {
+  items.push({ key: '', value: '', enabled: true });
+  renderKeyValueList(container, items, onUpdate);
+}
+</file>
+
+<file path="src/renderer/helpers/request-context.ts">
+import { Request, Project, Folder } from '../../shared/types';
+import { findFolder } from './project-manager';
+
+export interface RequestContext {
+  request: Request;
+  projectId?: string;
+  folderId?: string;
+  isInProject: boolean;
+}
+
+export function getRequestContext(request: Request): RequestContext {
+  return {
+    request,
+    projectId: request.projectId,
+    folderId: request.folderId,
+    isInProject: !!request.projectId
+  };
+}
+
+export function saveRequestToProject(
+  request: Request,
+  project: Project,
+  folderId?: string
+): void {
+  // Remove request from old location if it exists
+  removeRequestFromProject(project, request.id);
+  
+  // Update request context
+  request.projectId = project.id;
+  request.folderId = folderId;
+  request.updatedAt = Date.now();
+  
+  // Add to new location
+  if (folderId) {
+    const folder = findFolder(project.folders, folderId);
+    if (folder) {
+      folder.requests.push(request);
+    }
+  } else {
+    project.requests.push(request);
+  }
+}
+
+export function updateRequestInProject(
+  request: Request,
+  project: Project
+): boolean {
+  if (!request.projectId || request.projectId !== project.id) {
+    return false;
+  }
+  
+  request.updatedAt = Date.now();
+  
+  if (request.folderId) {
+    const folder = findFolder(project.folders, request.folderId);
+    if (folder) {
+      const index = folder.requests.findIndex(r => r.id === request.id);
+      if (index >= 0) {
+        folder.requests[index] = { ...request };
+        return true;
+      }
+    }
+  } else {
+    const index = project.requests.findIndex(r => r.id === request.id);
+    if (index >= 0) {
+      project.requests[index] = { ...request };
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+function removeRequestFromProject(project: Project, requestId: string): void {
+  // Remove from root
+  project.requests = project.requests.filter(r => r.id !== requestId);
+  
+  // Remove from all folders
+  const removeFromFolders = (folders: Folder[]) => {
+    folders.forEach(folder => {
+      folder.requests = folder.requests.filter(r => r.id !== requestId);
+      removeFromFolders(folder.subfolders);
+    });
+  };
+  
+  removeFromFolders(project.folders);
+}
+</file>
+
 <file path="src/renderer/helpers/request-loader.ts">
 import { Request, HttpMethod } from '../../shared/types';
 import { isHttpMethod } from './request-builder';
@@ -1685,6 +1860,168 @@ export function loadRequestIntoUI(
     elements.authTypeSelect.value = 'none';
     elements.authTypeSelect.dispatchEvent(new Event('change'));
   }
+}
+</file>
+
+<file path="src/renderer/helpers/sidebar-renderer.ts">
+import { Project, Folder, Request } from '../../shared/types';
+import { methodColors } from './request-builder';
+
+export interface SidebarCallbacks {
+  onNewFolder: () => void;
+  onNewRequest: () => void;
+  onAddRequestToFolder: (folderId: string) => void;
+  onAddSubfolder: (parentId: string) => void;
+  onDeleteFolder: (folderId: string) => void;
+  onDeleteRequest: (requestId: string) => void;
+  onLoadRequest: (request: Request) => void;
+}
+
+export function renderSidebar(
+  container: HTMLDivElement,
+  project: Project | null,
+  callbacks: SidebarCallbacks,
+  activeRequestId?: string
+): void {
+  container.innerHTML = '';
+  
+  if (!project) {
+    container.innerHTML = '<div class="text-gray-400 text-center py-4 text-sm">Select a project to view its contents</div>';
+    return;
+  }
+  
+  // Add New Folder Button
+  const newFolderBtn = document.createElement('button');
+  newFolderBtn.className = 'w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded mb-4 text-sm';
+  newFolderBtn.textContent = '+ New Folder';
+  newFolderBtn.onclick = callbacks.onNewFolder;
+  container.appendChild(newFolderBtn);
+  
+  // Add New Request Button
+  const newRequestBtn = document.createElement('button');
+  newRequestBtn.className = 'w-full bg-green-600 hover:bg-green-700 px-3 py-2 rounded mb-4 text-sm';
+  newRequestBtn.textContent = '+ New Request';
+  newRequestBtn.onclick = callbacks.onNewRequest;
+  container.appendChild(newRequestBtn);
+  
+  // Render folders
+  project.folders.forEach(folder => {
+    renderFolder(folder, container, 0, callbacks, activeRequestId);
+  });
+  
+  // Render root requests
+  project.requests.forEach(request => {
+    renderRequest(request, container, 0, callbacks, activeRequestId);
+  });
+}
+
+function renderFolder(
+  folder: Folder,
+  container: HTMLElement,
+  depth: number,
+  callbacks: SidebarCallbacks,
+  activeRequestId?: string
+): void {
+  const folderDiv = document.createElement('div');
+  folderDiv.className = 'mb-2';
+  folderDiv.style.marginLeft = `${depth * 20}px`;
+  
+  const folderHeader = document.createElement('div');
+  folderHeader.className = 'flex items-center justify-between bg-gray-800 p-2 rounded cursor-pointer hover:bg-gray-750';
+  
+  const folderName = document.createElement('div');
+  folderName.className = 'flex items-center gap-2';
+  folderName.innerHTML = `<span>📁</span><span class="text-sm">${folder.name}</span>`;
+  
+  const folderActions = document.createElement('div');
+  folderActions.className = 'flex gap-1';
+  
+  const addRequestBtn = document.createElement('button');
+  addRequestBtn.textContent = '+';
+  addRequestBtn.className = 'bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs';
+  addRequestBtn.onclick = (e) => {
+    e.stopPropagation();
+    callbacks.onAddRequestToFolder(folder.id);
+  };
+  
+  const addSubfolderBtn = document.createElement('button');
+  addSubfolderBtn.textContent = '📁';
+  addSubfolderBtn.className = 'bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs';
+  addSubfolderBtn.onclick = (e) => {
+    e.stopPropagation();
+    callbacks.onAddSubfolder(folder.id);
+  };
+  
+  const deleteFolderBtn = document.createElement('button');
+  deleteFolderBtn.textContent = '×';
+  deleteFolderBtn.className = 'bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs';
+  deleteFolderBtn.onclick = (e) => {
+    e.stopPropagation();
+    callbacks.onDeleteFolder(folder.id);
+  };
+  
+  folderActions.appendChild(addRequestBtn);
+  folderActions.appendChild(addSubfolderBtn);
+  folderActions.appendChild(deleteFolderBtn);
+  
+  folderHeader.appendChild(folderName);
+  folderHeader.appendChild(folderActions);
+  folderDiv.appendChild(folderHeader);
+  
+  const folderContent = document.createElement('div');
+  folderContent.className = 'ml-4 mt-1';
+  
+  folder.subfolders.forEach(subfolder => {
+    renderFolder(subfolder, folderContent, depth + 1, callbacks, activeRequestId);
+  });
+  
+  folder.requests.forEach(request => {
+    renderRequest(request, folderContent, depth + 1, callbacks, activeRequestId);
+  });
+  
+  folderDiv.appendChild(folderContent);
+  container.appendChild(folderDiv);
+}
+
+function renderRequest(
+  request: Request,
+  container: HTMLElement,
+  depth: number,
+  callbacks: SidebarCallbacks,
+  activeRequestId?: string
+): void {
+  const isActive = activeRequestId === request.id;
+  
+  const requestDiv = document.createElement('div');
+  requestDiv.className = `p-2 rounded mb-1 cursor-pointer flex items-center justify-between ${
+    isActive ? 'bg-blue-900 border border-blue-500' : 'bg-gray-800 hover:bg-gray-750'
+  }`;
+  requestDiv.style.marginLeft = `${depth * 20}px`;
+  
+  const methodColor = methodColors[request.method] || 'text-gray-400';
+  
+  const requestInfo = document.createElement('div');
+  requestInfo.className = 'flex items-center gap-2 flex-1';
+  requestInfo.innerHTML = `
+    <span class="font-semibold ${methodColor} text-xs">${request.method}</span>
+    <span class="text-sm ${isActive ? 'text-white font-semibold' : 'text-gray-300'}">${request.name}</span>
+  `;
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '×';
+  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs';
+  deleteBtn.onclick = (e) => {
+    e.stopPropagation();
+    callbacks.onDeleteRequest(request.id);
+  };
+  
+  requestDiv.onclick = () => {
+    callbacks.onLoadRequest(request);
+  };
+  
+  requestDiv.appendChild(requestInfo);
+  requestDiv.appendChild(deleteBtn);
+  container.appendChild(requestDiv);
 }
 </file>
 
@@ -1870,6 +2207,7 @@ export interface KeyValue {
   key: string;
   value: string;
   enabled: boolean;
+  sensitive?: boolean;
 }
 
 export interface Auth {
@@ -1884,6 +2222,22 @@ export interface Auth {
   apiKey?: {
     key: string;
     value: string;
+    addTo: 'header' | 'query';
+  };
+}
+
+export interface SecureAuth {
+  type: AuthType;
+  basic?: {
+    username: string;
+    password: string; // base64 encrypted
+  };
+  bearer?: {
+    token: string; // base64 encrypted
+  };
+  apiKey?: {
+    key: string;
+    value: string; // base64 encrypted
     addTo: 'header' | 'query';
   };
 }
@@ -2060,13 +2414,15 @@ import { CollectionStorage } from '../storage/collections';
 import { EnvironmentStorage } from '../storage/environments';
 import { HistoryStorage } from '../storage/history';
 import { ProjectStorage } from '../storage/projects';
+import { SecureProjectStorage } from '../storage/secure-projects';
 import * as fs from 'fs';
 
 const requestHandler = new RequestHandler();
 const collectionStorage = new CollectionStorage();
 const environmentStorage = new EnvironmentStorage();
 const historyStorage = new HistoryStorage();
-const projectStorage = new ProjectStorage();
+// const projectStorage = new ProjectStorage();
+const projectStorage = new SecureProjectStorage();
 
 export const registerHandlers = (): void => {
   // Send HTTP request
@@ -2222,44 +2578,6 @@ export const registerHandlers = (): void => {
 };
 </file>
 
-<file path="todo.md">
-# TODO
-
-## documentation :
-
-- Once everything is finished, create a documentation file
-- Explain in detail the GUI and how it works
-- Explain in detail the functionality
-- Explain in detail every file
-
-## functionality :
-
-- Add support for cookies
-- Add support for ogranizing folders / projects
-- Options for projects / collections, eg : {{baseUrl}}
-
-## UI :
-
-- Add dark mode
-- Add light mode
-- Add system mode
-
-- Fix any missing UI elements
-- Fix any UI elements that are not working / bugging
-
-- Can't use the url input after closing a tab
-
-## Website :
-
-- Create a branch for the website
-- Create a website for the app
-- Locally create the website files in a different folder to avoid conflicts and confusion
-
-## Localization :
-
-- Try to add localization
-</file>
-
 <file path="package.json">
 {
   "name": "reqio-electron",
@@ -2308,6 +2626,42 @@ export const registerHandlers = (): void => {
     }
   }
 }
+</file>
+
+<file path="todo.md">
+# TODO
+
+## documentation :
+
+- Once everything is finished, create a documentation file
+- Explain in detail the GUI and how it works
+- Explain in detail the functionality
+- Explain in detail every file
+
+## functionality :
+
+- Add support for cookies
+
+## UI :
+
+- Add dark mode
+- Add light mode
+- Add system mode
+
+- Fix any missing UI elements
+- Fix any UI elements that are not working / bugging
+
+- Can't use the url input after closing a tab
+
+## Website :
+
+- Create a branch for the website
+- Create a website for the app
+- Locally create the website files in a different folder to avoid conflicts and confusion
+
+## Localization :
+
+- Try to add localization
 </file>
 
 <file path="src/renderer/index.ts">
@@ -2459,9 +2813,29 @@ let pendingRequestToAdd: Request | null = null;
 const breadcrumbContainer = document.getElementById('breadcrumb-container') as HTMLDivElement;
 const addToProjectBtn = document.getElementById('add-to-project') as HTMLButtonElement;
 
+document.getElementById('toggle-bearer-token')?.addEventListener('click', () => {
+  const tokenInput = document.getElementById('auth-bearer-token') as HTMLInputElement;
+  const eyeClosed = document.getElementById('bearer-eye-closed');
+  const eyeOpen = document.getElementById('bearer-eye-open');
+  
+  if (!eyeClosed || !eyeOpen) return;
+  
+  if (tokenInput.type === 'password') {
+    tokenInput.type = 'text';
+    eyeClosed.classList.add('hidden');
+    eyeOpen.classList.remove('hidden');
+  } else {
+    tokenInput.type = 'password';
+    eyeClosed.classList.remove('hidden');
+    eyeOpen.classList.add('hidden');
+  }
+});
+
 // Tab Manager
 const tabManager = new TabManager(tabsContainer, (tabId) => {
   loadTabById(tabId);
+  renderSidebarUI();
+  renderSidebarUI();
 });
 
 // Project Functions
@@ -2501,25 +2875,10 @@ function debouncedSaveCurrentTab(): void {
   
   saveDebounceTimer = window.setTimeout(() => {
     const tab = tabManager.getActiveTab();
-    if (!tab) return;
-    
-    const currentRequestContext = {
-      id: tab.request.id,
-      projectId: tab.request.projectId,
-      folderId: tab.request.folderId,
-      createdAt: tab.request.createdAt
-    };
     
     saveCurrentTab();
-    
-    // Restore context after save to prevent breadcrumb flash
-    if (tab) {
-      tab.request.id = currentRequestContext.id;
-      tab.request.projectId = currentRequestContext.projectId;
-      tab.request.folderId = currentRequestContext.folderId;
-      tab.request.createdAt = currentRequestContext.createdAt;
-    }
-    
+    markUnsavedChanges();
+    autoSaveProject();
     saveDebounceTimer = null;
   }, 500);
 }
@@ -2527,6 +2886,8 @@ function debouncedSaveCurrentTab(): void {
 function saveCurrentTab(): void {
   const tab = tabManager.getActiveTab();
   if (!tab) return;
+  
+  const originalRequest = tab.request;
   
   const request = buildRequest(
     currentMethod,
@@ -2541,22 +2902,48 @@ function saveCurrentTab(): void {
     currentProject?.id
   );
   
-  // Preserve the original request ID and context
-  request.id = tab.request.id;
-  request.projectId = tab.request.projectId;
-  request.folderId = tab.request.folderId;
-  request.createdAt = tab.request.createdAt;
+  // Preserve ALL original request properties
+  request.id = originalRequest.id;
+  request.projectId = originalRequest.projectId;
+  request.folderId = originalRequest.folderId;
+  request.createdAt = originalRequest.createdAt;
+  request.updatedAt = Date.now();
   
+  // Update name based on URL
+  updateRequestName(request);
+  
+  // Update the tab
+  tab.request = request;
   tabManager.updateActiveTab(request, lastResponse);
   
   // Update request in project if it belongs to one
   if (currentProject && request.projectId === currentProject.id) {
     updateRequestInProject(request, currentProject);
+    console.log('Request updated in project:', request.id, request.name);
     markUnsavedChanges();
+    // Re-render sidebar to show updated request
+    renderSidebarUI();
   }
   
   // Update breadcrumbs
   updateBreadcrumbs(request);
+}
+
+function updateRequestName(request: Request): void {
+  if (!request.url) {
+    request.name = 'Untitled Request';
+    return;
+  }
+  
+  try {
+    const url = new URL(request.url);
+    const path = url.pathname.split('/').filter(p => p).pop() || url.hostname;
+    request.name = `${request.method} ${path}`;
+  } catch {
+    // If URL is incomplete, use what we have
+    const urlPart = request.url.split('/').filter(p => p).pop() || request.url;
+    request.name = `${request.method} ${urlPart.substring(0, 30)}`;
+  }
 }
 
 // Add to project button event listener
@@ -2786,6 +3173,9 @@ function loadProject(projectId: string): void {
 }
 
 function renderSidebarUI(): void {
+  const tab = tabManager.getActiveTab();
+  const activeRequestId = tab?.request.id;
+  
   const callbacks: SidebarCallbacks = {
     onNewFolder: () => openFolderForm(),
     onNewRequest: () => createRequestInProject(),
@@ -2796,7 +3186,7 @@ function renderSidebarUI(): void {
     onLoadRequest: (request) => loadRequestIntoTab(request)
   };
   
-  renderSidebar(sidebarContainer, currentProject, callbacks);
+  renderSidebar(sidebarContainer, currentProject, callbacks, activeRequestId);
 }
 
 function openFolderForm(parentId?: string): void {
@@ -2820,6 +3210,7 @@ function createRequestInProject(): void {
   if (!currentProject) return;
   
   const request = createRequest(currentProject.id);
+  request.name = `New Request ${Date.now()}`;
   addRequestToProject(currentProject, request);
   
   markUnsavedChanges();
@@ -2833,6 +3224,7 @@ function createRequestInFolder(folderId: string): void {
   if (!currentProject) return;
   
   const request = createRequest(currentProject.id, folderId);
+  request.name = `New Request ${Date.now()}`;
   addRequestToProject(currentProject, request, folderId);
   
   markUnsavedChanges();
@@ -2843,9 +3235,9 @@ function createRequestInFolder(folderId: string): void {
 }
 
 function loadRequestIntoTab(request: Request): void {
-  const newTabId = tabManager.createTab({ ...request });
   const tab = tabManager.getActiveTab();
   if (tab) {
+    // Load the request into the current active tab
     tab.request = { ...request };
     tab.response = null;
     loadTabById(tabManager.getActiveTabId());
@@ -3254,7 +3646,13 @@ loadProjects().then(() => {
   <body class="bg-gray-900 text-white">
     <div class="flex h-screen">
       <!-- Sidebar -->
-      <div class="w-64 bg-gray-800 p-4 overflow-y-auto border-r border-gray-700">
+      <div class="w-64 p-4 bg-[rgba(255,255,255,0.1)] overflow-y-auto border-gray-700
+                overflow-hidden border border-l-0 border-gray-400 rounded-r-md px-4 py-2 text-lg
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_5px_5px_-2.5px_rgba(255,255,255,0.25),_inset_-5px_0_5px_-2.5px_rgba(255,255,255,0.25),_inset_0_-5px_5px_-2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_7px_7px_-3.5px_rgba(255,255,255,0.35),_inset_-7px_0_7px_-3.5px_rgba(255,255,255,0.35),_inset_0_-7px_7px_-3.5px_rgba(255,255,255,0.35)]">
         <div class="mb-4">
           <h2 class="text-lg font-bold mb-2">Project</h2>
           <div class="text-sm text-gray-400 mb-2" id="current-project-name">No Project</div>
@@ -3266,8 +3664,8 @@ loadProjects().then(() => {
       </div>
 
       <!-- Main Content -->
-      <div class="flex-1 flex flex-col p-6 overflow-hidden">
-        <h1 class="text-3xl font-bold mb-4">Req-Rep.io</h1>
+      <div class="flex-1 flex flex-col px-6 mb-1 overflow-hidden">
+        <h1 class="text-3xl font-bold mb-4 mt-6">Req-Rep.io</h1>
         
         <!-- Tabs Bar -->
         <div class="flex items-center gap-2 mb-4 border-b border-gray-700 pb-0">
@@ -3278,12 +3676,14 @@ loadProjects().then(() => {
         <!-- URL Bar -->
         <div class="mb-4 flex items-center gap-3">
           <div class="relative">
+            <!--Change the UI to glass here-->
             <button id="method-button" class="bg-gray-800 text-green-600 font-semibold px-4 py-2 rounded cursor-pointer hover:bg-gray-700 min-w-[120px] text-left flex items-center justify-between gap-3">
               <span id="method-text">GET</span>
               <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="#A9AEC1" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
               </svg>
             </button>
+            <!--Change the UI to glass here-->
             <div id="method-dropdown" class="hidden absolute top-full left-0 mt-1 bg-gray-800 rounded shadow-lg border border-gray-700 min-w-[120px] z-50">
               <div data-method="GET" class="px-4 py-2 text-green-600 hover:bg-gray-700 cursor-pointer font-semibold">GET</div>
               <div data-method="POST" class="px-4 py-2 text-yellow-600 hover:bg-gray-700 cursor-pointer font-semibold">POST</div>
@@ -3294,16 +3694,73 @@ loadProjects().then(() => {
               <div data-method="OPTIONS" class="px-4 py-2 text-purple-600 hover:bg-gray-700 cursor-pointer font-semibold">OPTIONS</div>
             </div>
           </div>
+          <!--Change the UI to glass here-->
           <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL or use {{baseUrl}}">
-          <button id="fetch" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-semibold">Send</button>
-          <button id="save-request" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">Save</button>
-          <button id="load-request" class="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded">Load</button>
-          <button id="view-history" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded">History</button>
+          <button id="fetch" class="font-semibold
+                overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
+                bg-[rgba(102,156,255,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10
+          ">Send</button>
+          <button id="save-request" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
+                bg-[rgba(121,255,132,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">Save</button>
+          <button id="load-request" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
+                bg-[rgba(255,178,131,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">Load</button>
+          <button id="view-history" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
+                bg-[rgba(192,131,255,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">History</button>
         </div>
 
+        <!--Change the UI to glass here-->
         <!-- Breadcrumbs and Context -->
         <div class="mb-3 flex items-center justify-between bg-gray-800 px-4 py-2 rounded">
           <div id="breadcrumb-container" class="flex items-center"></div>
+          <!--Change the UI to glass here-->
           <button id="add-to-project" class="hidden bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
             + Add to Project
           </button>
@@ -3320,15 +3777,18 @@ loadProjects().then(() => {
         <!-- Params Panel -->
         <div id="params-panel" class="mb-4">
           <div id="params-container" class="mb-2"></div>
+          <!--Change the UI to glass here-->
           <button id="add-param" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Parameter</button>
         </div>
         
         <!-- Headers Panel -->
         <div id="headers-panel" class="mb-4 hidden">
           <div id="headers-container" class="mb-2"></div>
+          <!--Change the UI to glass here-->
           <button id="add-header" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Header</button>
         </div>
         
+        <!--Change the UI to glass here-->
         <!-- Body Panel -->
         <div id="body-panel" class="mb-4 hidden">
           <select id="body-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
@@ -3339,6 +3799,7 @@ loadProjects().then(() => {
             <option value="x-www-form-urlencoded">x-www-form-urlencoded</option>
           </select>
           
+          <!--Change the UI to glass here-->
           <div id="body-raw-container" class="hidden">
             <textarea id="body-raw" class="w-full bg-gray-800 text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder="Enter raw body"></textarea>
           </div>
@@ -3353,6 +3814,7 @@ loadProjects().then(() => {
           </div>
         </div>
         
+        <!--Change the UI to glass here-->
         <!-- Auth Panel -->
         <div id="auth-panel" class="mb-4 hidden">
           <select id="auth-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
@@ -3370,7 +3832,18 @@ loadProjects().then(() => {
           </div>
           
           <div id="auth-bearer" class="hidden">
-            <input type="text" id="auth-bearer-token" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Token">
+            <div class="relative">
+              <input type="password" id="auth-bearer-token" class="w-full bg-gray-800 text-white p-2 pr-10 rounded border border-gray-700" placeholder="Token">
+              <button type="button" id="toggle-bearer-token" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                <svg id="bearer-eye-closed" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
+                </svg>
+                <svg id="bearer-eye-open" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                </svg>
+              </button>
+            </div>
           </div>
           
           <div id="auth-apikey" class="hidden space-y-3">
@@ -3384,8 +3857,12 @@ loadProjects().then(() => {
         </div>
         
         <!-- Response Section -->
-        <div class="bg-gray-800 rounded-lg p-4 flex flex-col min-h-0 max-w-[calc(100vw-3rem)]">
-          <div class="flex items-center justify-between mb-3">
+        <div class="p-4 flex flex-col min-h-0 max-w-[calc(100vw-3rem)]
+                overflow-hidden border border-gray-400 rounded-md
+                bg-[rgba(255,255,255,0.1)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]">
+          <div class="flex items-center justify-between mb-3 mt-1">
             <div class="flex items-center gap-4">
               <span class="text-gray-400">Status:</span>
               <span id="status-code" class="text-gray-500">-</span>
@@ -3407,16 +3884,20 @@ loadProjects().then(() => {
       </div>
     </div>
     
+    <!--Change the UI to glass here-->
     <!-- History Modal -->
     <div id="history-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-gray-900 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-2xl font-bold">Request History</h2>
           <div class="flex gap-2">
+            <!--Change the UI to glass here-->
             <button id="clear-history" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded text-sm">Clear History</button>
+            <!--Change the UI to glass here-->
             <button id="close-history" class="text-gray-400 hover:text-white text-2xl">&times;</button>
           </div>
         </div>
+        <!--Change the UI to glass here-->
         <div id="history-container" class="flex-1 overflow-auto"></div>
       </div>
     </div>
@@ -3426,9 +3907,13 @@ loadProjects().then(() => {
       <div class="bg-gray-900 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-2xl font-bold">Projects</h2>
+          <!--Change the UI to glass here-->
           <div class="flex gap-2">
+            <!--Change the UI to glass here-->
             <button id="import-project" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm">Import Project</button>
+            <!--Change the UI to glass here-->
             <button id="create-project" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">Create Project</button>
+            <!--Change the UI to glass here-->
             <button id="close-project-modal" class="text-gray-400 hover:text-white text-2xl">&times;</button>
           </div>
         </div>
@@ -3444,16 +3929,19 @@ loadProjects().then(() => {
         <div class="flex-1 overflow-auto mb-4">
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Project Name *</label>
+            <!--Change the UI to glass here-->
             <input type="text" id="project-name-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="My Project">
           </div>
           
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Description</label>
+            <!--Change the UI to glass here-->
             <textarea id="project-desc-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" rows="3" placeholder="Project description"></textarea>
           </div>
           
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Base URL</label>
+            <!--Change the UI to glass here-->
             <input type="text" id="project-baseurl-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="http://localhost:8080">
             <p class="text-xs text-gray-400 mt-1">Use {{baseUrl}} in your requests to reference this URL</p>
           </div>
@@ -3461,8 +3949,10 @@ loadProjects().then(() => {
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Environment Variables</label>
             <div id="project-variables-container" class="mb-2"></div>
+            <!--Change the UI to glass here-->
             <button id="add-project-variable" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Variable</button>
-            <p class="text-xs text-gray-400 mt-1">Use {{variableName}} in your requests</p>
+            <!--Change the UI to glass here-->
+            <p class="text-xs text-gray-400 mt-1">Use {{variableName}} in your requests. Mark sensitive data (tokens, passwords) with the lock icon.</p>
           </div>
         </div>
         
@@ -3496,13 +3986,16 @@ loadProjects().then(() => {
         <h2 class="text-2xl font-bold mb-4">Select Folder</h2>
         
         <div class="flex-1 overflow-auto mb-4">
+          <!--Change the UI to glass here-->
           <button id="select-project-root" class="w-full bg-gray-800 hover:bg-gray-700 p-3 rounded mb-2 text-left">
             📁 <span class="font-semibold">Project Root</span>
           </button>
+          <!--Change the UI to glass here-->
           <div id="folder-tree-container"></div>
         </div>
         
         <div class="flex gap-2 justify-end">
+          <!--Change the UI to glass here-->
           <button id="cancel-folder-select" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Cancel</button>
         </div>
       </div>

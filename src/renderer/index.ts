@@ -168,7 +168,6 @@ document.getElementById('toggle-bearer-token')?.addEventListener('click', () => 
 const tabManager = new TabManager(tabsContainer, (tabId) => {
   loadTabById(tabId);
   renderSidebarUI();
-  renderSidebarUI();
 });
 
 // Project Functions
@@ -207,8 +206,6 @@ function debouncedSaveCurrentTab(): void {
   }
   
   saveDebounceTimer = window.setTimeout(() => {
-    const tab = tabManager.getActiveTab();
-    
     saveCurrentTab();
     markUnsavedChanges();
     autoSaveProject();
@@ -252,7 +249,6 @@ function saveCurrentTab(): void {
   // Update request in project if it belongs to one
   if (currentProject && request.projectId === currentProject.id) {
     updateRequestInProject(request, currentProject);
-    console.log('Request updated in project:', request.id, request.name);
     markUnsavedChanges();
     // Re-render sidebar to show updated request
     renderSidebarUI();
@@ -363,6 +359,15 @@ function loadTabById(tabId: string): void {
   const tab = tabManager.getTabs().find(t => t.id === tabId);
   if (!tab) return;
   
+  // Store the current focused element
+  const activeElement = document.activeElement as HTMLElement;
+  const wasFocused = activeElement && (
+    activeElement === urlInput ||
+    paramsContainer.contains(activeElement) ||
+    headersContainer.contains(activeElement) ||
+    bodyFormDataContainer.contains(activeElement)
+  );
+  
   loadRequestIntoUI(
     tab.request,
     {
@@ -390,6 +395,13 @@ function loadTabById(tabId: string): void {
       setFormFields: (fields) => { formFields = fields; }
     }
   );
+  
+  // Restore focus if needed
+  if (wasFocused && activeElement === urlInput) {
+    setTimeout(() => {
+      urlInput.focus();
+    }, 0);
+  }
   
   // Update breadcrumbs
   updateBreadcrumbs(tab.request);
