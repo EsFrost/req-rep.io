@@ -60,6 +60,7 @@ export const displayResponse = (
   codeElement.style.whiteSpace = 'pre';
   codeElement.style.overflowWrap = 'normal';
   codeElement.style.wordBreak = 'normal';
+  codeElement.style.setProperty('background-color', 'rgba(7,14,29,0.7)', 'important');
   
   const data = response.body;
   

@@ -20,8 +20,6 @@
 - Fix any missing UI elements
 - Fix any UI elements that are not working / bugging
 
-- Can't use the url input after closing a tab
-
 ## Website :
 
 - Create a branch for the website
@@ -31,3 +29,7 @@
 ## Localization :
 
 - Try to add localization
+
+## Problems :
+
+- Opening a new tab while having selected a project puts automatically in the project

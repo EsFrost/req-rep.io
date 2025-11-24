@@ -13,7 +13,7 @@
   <body class="bg-gray-900 text-white">
     <div class="flex h-screen">
       <!-- Sidebar -->
-      <div class="w-64 p-4 bg-[rgba(255,255,255,0.1)] overflow-y-auto border-gray-700
+      <div class="w-64 p-4 bg-[rgba(7,14,29,0.5)] overflow-y-auto border-gray-700
                 overflow-hidden border border-l-0 border-gray-400 rounded-r-md px-4 py-2 text-lg
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_5px_5px_-2.5px_rgba(255,255,255,0.25),_inset_-5px_0_5px_-2.5px_rgba(255,255,255,0.25),_inset_0_-5px_5px_-2.5px_rgba(255,255,255,0.25)]
@@ -65,7 +65,7 @@
           <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL or use {{baseUrl}}">
           <button id="fetch" class="font-semibold
                 overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
-                bg-[rgba(102,156,255,0.3)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
                 transition-all duration-500 ease-in-out
@@ -80,7 +80,7 @@
                 active:duration-10
           ">Send</button>
           <button id="save-request" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
-                bg-[rgba(121,255,132,0.3)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
                 transition-all duration-500 ease-in-out
@@ -94,7 +94,7 @@
                 active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
                 active:duration-10">Save</button>
           <button id="load-request" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
-                bg-[rgba(255,178,131,0.3)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
                 transition-all duration-500 ease-in-out
@@ -108,7 +108,7 @@
                 active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
                 active:duration-10">Load</button>
           <button id="view-history" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
-                bg-[rgba(192,131,255,0.3)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
                 transition-all duration-500 ease-in-out
@@ -123,16 +123,36 @@
                 active:duration-10">History</button>
         </div>
 
-        <!--Change the UI to glass here-->
         <!-- Breadcrumbs and Context -->
-        <div class="mb-3 flex items-center justify-between bg-gray-800 px-4 py-2 rounded">
-          <div id="breadcrumb-container" class="flex items-center"></div>
-          <!--Change the UI to glass here-->
-          <button id="add-to-project" class="hidden bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
+        <div class="mb-3 min-h-[3rem] flex items-center justify-between
+                    overflow-hidden border border-gray-400 rounded-md px-4 py-2
+                    bg-[rgba(17,24,39,0.3)]
+                    backdrop-blur-xs
+                    shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                    transition-all duration-500 ease-in-out
+                    hover:backdrop-blur-md">
+          <div id="breadcrumb-container" class="flex items-center">Root</div>
+          <button id="add-to-project" class="hidden text-sm
+          
+                overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">
             + Add to Project
           </button>
         </div>
         
+        <!-- Fix the color of the text -->
         <!-- Tabs -->
         <div class="flex border-b border-gray-700 mb-4">
           <button id="params-tab" class="px-4 py-2 border-b-2 border-blue-500 text-blue-500 font-semibold">Query Params</button>
@@ -145,17 +165,42 @@
         <div id="params-panel" class="mb-4">
           <div id="params-container" class="mb-2"></div>
           <!--Change the UI to glass here-->
-          <button id="add-param" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Parameter</button>
+          <button id="add-param" class="text-sm
+                                        overflow-hidden border border-gray-400 rounded-md px-4 py-2 cursor-pointer
+                                        bg-[rgba(17,24,39,0.3)]
+                                        backdrop-blur-xs
+                                        shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                                        transition-all duration-500 ease-in-out
+                                        hover:backdrop-blur-md
+                                        hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                                        before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                                        before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                                        before:skew-x-[-25deg]
+                                        before:transition-all before:duration-500 before:ease-in-out
+                                        hover:before:left-[150%]
+                                        active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                                        active:duration-10">+ Add Parameter</button>
         </div>
         
         <!-- Headers Panel -->
         <div id="headers-panel" class="mb-4 hidden">
           <div id="headers-container" class="mb-2"></div>
-          <!--Change the UI to glass here-->
-          <button id="add-header" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Header</button>
+          <button id="add-header" class="text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 cursor-pointer
+                                        bg-[rgba(17,24,39,0.3)]
+                                        backdrop-blur-xs
+                                        shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                                        transition-all duration-500 ease-in-out
+                                        hover:backdrop-blur-md
+                                        hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                                        before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                                        before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                                        before:skew-x-[-25deg]
+                                        before:transition-all before:duration-500 before:ease-in-out
+                                        hover:before:left-[150%]
+                                        active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                                        active:duration-10">+ Add Header</button>
         </div>
         
-        <!--Change the UI to glass here-->
         <!-- Body Panel -->
         <div id="body-panel" class="mb-4 hidden">
           <select id="body-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
@@ -226,7 +271,7 @@
         <!-- Response Section -->
         <div class="p-4 flex flex-col min-h-0 max-w-[calc(100vw-3rem)]
                 overflow-hidden border border-gray-400 rounded-md
-                bg-[rgba(255,255,255,0.1)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]">
           <div class="flex items-center justify-between mb-3 mt-1">
@@ -238,7 +283,7 @@
               <span class="text-gray-400">Size:</span>
               <span id="response-size" class="text-gray-500">-</span>
             </div>
-            <select id="format-select" class="bg-gray-700 text-white p-2 rounded border border-gray-600 cursor-pointer">
+            <select id="format-select" class="bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-600 cursor-pointer">
               <option value="raw">Raw</option>
               <option value="json">JSON</option>
               <option value="html">HTML</option>
@@ -246,7 +291,7 @@
             </select>
           </div>
           
-          <div id="result" class="bg-[#282c34] rounded" style="overflow: auto; min-height: 0;"></div>
+          <div id="result" class="rounded" style="overflow: auto; min-height: 0;"></div>
         </div>
       </div>
     </div>
