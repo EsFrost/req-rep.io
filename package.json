@@ -1,6 +1,6 @@
 {
   "name": "reqio-electron",
-  "version": "0.0.2a",
+  "version": "0.1.2-alpha",
   "description": "App to test API endpoints using curl and electron",
   "license": "ISC",
   "author": "Sigmund Frost",
