@@ -44,7 +44,7 @@
         <div class="mb-4 flex items-center gap-3">
           <div class="relative">
             <!--Change the UI to glass here-->
-            <button id="method-button" class="text-green-600 font-semibold px-4 py-2 rounded cursor-pointer min-w-[120px] text-left flex items-center justify-between gap-3 bg-[rgba(7,14,29,0.7)] hover:bg-[rgba(7,14,29,0.9)] transition-all duration-300">
+            <button id="method-button" class="text-green-600 font-semibold px-4 py-2 rounded cursor-pointer min-w-[120px] text-left flex items-center justify-between gap-3 bg-[rgba(7,14,29,0.7)] hover:bg-[rgba(7,14,29,0.9)] transition-all duration-300 border border-gray-700">
               <span id="method-text">GET</span>
               <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="#A9AEC1" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
@@ -215,22 +215,34 @@
             <option value="x-www-form-urlencoded">x-www-form-urlencoded</option>
           </select>
           
-          <!--Change the UI to glass here-->
           <div id="body-raw-container" class="hidden">
-            <textarea id="body-raw" class="w-full bg-gray-800 text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder="Enter raw body"></textarea>
+            <textarea id="body-raw" class="w-full bg-[rgba(7,14,29,0.5)] text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder="Enter raw body"></textarea>
           </div>
           
           <div id="body-json-container" class="hidden">
-            <textarea id="body-json" class="w-full bg-gray-800 text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder='{"key": "value"}'></textarea>
+            <textarea id="body-json" class="w-full bg-[rgba(7,14,29,0.5)] text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder='{"key": "value"}'></textarea>
           </div>
           
           <div id="body-form-container" class="hidden">
             <div id="body-formdata-container" class="mb-2"></div>
-            <button id="add-form-field" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Field</button>
+            <button id="add-form-field" class="px-4 py-2 text-sm
+                                              overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
+                                              bg-[rgba(17,24,39,0.3)]
+                                              backdrop-blur-xs
+                                              shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                                              transition-all duration-500 ease-in-out
+                                              hover:backdrop-blur-md
+                                              hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                                              before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                                              before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                                              before:skew-x-[-25deg]
+                                              before:transition-all before:duration-500 before:ease-in-out
+                                              hover:before:left-[150%]
+                                              active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                                              active:duration-10">+ Add Field</button>
           </div>
         </div>
         
-        <!--Change the UI to glass here-->
         <!-- Auth Panel -->
         <div id="auth-panel" class="mb-4 hidden">
           <select id="auth-type" class="bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700 mb-3">

@@ -24,4 +24,27 @@
     word-wrap: break-word !important;
     overflow-wrap: break-word !important;
   }
+
+  /* Custom checkbox styles */
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: rgb(7, 14, 29);
+    border: 1px solid rgb(55, 65, 81);
+    cursor: pointer;
+  }
+  
+  input[type="checkbox"]:checked {
+    background-color: rgb(7, 14, 29);
+    border-color: rgb(255, 255, 255);
+  }
+  
+  input[type="checkbox"]:checked::before {
+    content: "✓";
+    display: block;
+    text-align: center;
+    color: white;
+    font-size: 14px;
+    line-height: 1.25rem;
+  }
 }
