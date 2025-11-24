@@ -62,7 +62,13 @@
             </div>
           </div>
           <!--Change the UI to glass here-->
-          <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL or use {{baseUrl}}">
+          <input type="text" id="url" class="text-white p-2 min-w-[15rem]
+                                              overflow-hidden border border-gray-400 rounded-md px-4 py-2
+                                              bg-[rgba(17,24,39,0.3)]
+                                              backdrop-blur-xs
+                                              shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                                              transition-all duration-500 ease-in-out
+                                              hover:backdrop-blur-md" placeholder="Enter URL or use {{baseUrl}}">
           <button id="fetch" class="font-semibold
                 overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
                 bg-[rgba(17,24,39,0.3)]
