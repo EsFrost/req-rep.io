@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, Menu, ipcMain } from 'electron';
 import path from 'path';
 
 export const createWindow = (): BrowserWindow => {
@@ -12,7 +12,16 @@ export const createWindow = (): BrowserWindow => {
     },
   });
 
+  // Hide the menu by default
+  win.setMenuBarVisibility(false);
+  
   win.loadFile('index.html');
+
+  // Handle menu toggle
+  ipcMain.on('toggle-menu', () => {
+    const isVisible = win.isMenuBarVisible();
+    win.setMenuBarVisibility(!isVisible);
+  });
   
   return win;
 };

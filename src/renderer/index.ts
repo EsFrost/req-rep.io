@@ -26,6 +26,7 @@ declare global {
       clearHistory: () => Promise<void>;
       exportRequest: (request: Request) => Promise<void>;
       importRequest: () => Promise<Request | null>;
+      toggleMenu: () => void;
     };
   }
 }
@@ -145,6 +146,26 @@ let pendingRequestToAdd: Request | null = null;
 // Breadcrumbs
 const breadcrumbContainer = document.getElementById('breadcrumb-container') as HTMLDivElement;
 const addToProjectBtn = document.getElementById('add-to-project') as HTMLButtonElement;
+
+// Toggle menu elements
+const hamburgerIcon = document.getElementById('hamburger-icon');
+const closeIcon = document.getElementById('close-icon');
+let menuVisible = false;
+
+
+// Event listener for menu toggle
+document.getElementById('toggle-menu')?.addEventListener('click', () => {
+  window.electron.toggleMenu();
+  menuVisible = !menuVisible;
+  
+  if (menuVisible) {
+    hamburgerIcon?.classList.add('hidden');
+    closeIcon?.classList.remove('hidden');
+  } else {
+    hamburgerIcon?.classList.remove('hidden');
+    closeIcon?.classList.add('hidden');
+  }
+});
 
 document.getElementById('toggle-bearer-token')?.addEventListener('click', () => {
   const tokenInput = document.getElementById('auth-bearer-token') as HTMLInputElement;

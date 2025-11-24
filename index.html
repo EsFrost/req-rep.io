@@ -11,6 +11,16 @@
     <link href="./node_modules/highlight.js/styles/atom-one-dark.css" rel="stylesheet">
   </head>
   <body class="bg-gray-900 text-white">
+    <button id="toggle-menu" class="p-2 hover:bg-gray-800 rounded absolute top-0 right-0">
+      <!-- Hamburger icon (shown by default) -->
+      <svg id="hamburger-icon" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+      </svg>
+      <!-- X icon (hidden by default) -->
+      <svg id="close-icon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+      </svg>
+    </button>
     <div class="flex h-screen">
       <!-- Sidebar -->
       <div class="w-64 p-4 bg-[rgba(7,14,29,0.5)] overflow-y-auto border-gray-700

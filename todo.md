@@ -13,16 +13,9 @@
 
 ## UI :
 
-- Add dark mode
-- Add light mode
-- Add system mode
-
 - Fix any missing UI elements
 - Fix any UI elements that are not working / bugging
 
-- Change folder icon to https://www.svgrepo.com/svg/532824/folder-plus and change the color to white for dark mode
-
-- Hide the default electron menu
 - Add icons
 
 ## Website :
@@ -37,6 +30,6 @@
 
 ## Problems :
 
-- Opening a new tab while having selected a project puts automatically in the project
+- Opening a new tab while having selected a project puts it automatically in the project
 
 - On adding fields the previous ones go away

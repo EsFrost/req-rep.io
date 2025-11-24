@@ -674,78 +674,6 @@ export function addRequestToProject(
 }
 </file>
 
-<file path="src/renderer/helpers/project-renderer.ts">
-import { Project } from '../../shared/types';
-
-export interface ProjectCallbacks {
-  onLoadProject: (projectId: string) => void;
-  onEditProject: (project: Project) => void;
-  onExportProject: (project: Project) => void;
-  onDeleteProject: (projectId: string) => void;
-}
-
-export function renderProjectList(
-  container: HTMLDivElement,
-  projects: Project[],
-  callbacks: ProjectCallbacks
-): void {
-  container.innerHTML = '';
-  
-  if (projects.length === 0) {
-    container.innerHTML = '<div class="text-gray-400 text-center py-8">No projects yet. Create one to get started!</div>';
-    return;
-  }
-  
-  projects.forEach(project => {
-    const projectCard = document.createElement('div');
-    projectCard.className = 'bg-gray-800 p-4 rounded mb-3 hover:bg-gray-750 cursor-pointer';
-    
-    projectCard.innerHTML = `
-      <div class="flex justify-between items-start mb-2">
-        <div class="flex-1">
-          <h3 class="text-lg font-semibold text-white mb-1">${project.name}</h3>
-          ${project.description ? `<p class="text-sm text-gray-400 mb-2">${project.description}</p>` : ''}
-          ${project.baseUrl ? `<p class="text-xs text-blue-400">Base URL: ${project.baseUrl}</p>` : ''}
-        </div>
-        <div class="flex gap-2">
-          <button class="edit-project bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">Edit</button>
-          <button class="export-project bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm">Export</button>
-          <button class="delete-project bg-red-600 hover:bg-red-700 px-3 py-1 rounded text-sm">Delete</button>
-        </div>
-      </div>
-      <div class="text-xs text-gray-500">
-        ${project.folders.length} folder(s), ${project.requests.length} request(s)
-      </div>
-    `;
-    
-    projectCard.onclick = (e) => {
-      if (!(e.target as HTMLElement).classList.contains('edit-project') && 
-          !(e.target as HTMLElement).classList.contains('delete-project') &&
-          !(e.target as HTMLElement).classList.contains('export-project')) {
-        callbacks.onLoadProject(project.id);
-      }
-    };
-    
-    projectCard.querySelector('.edit-project')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      callbacks.onEditProject(project);
-    });
-    
-    projectCard.querySelector('.export-project')?.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      callbacks.onExportProject(project);
-    });
-    
-    projectCard.querySelector('.delete-project')?.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      callbacks.onDeleteProject(project.id);
-    });
-    
-    container.appendChild(projectCard);
-  });
-}
-</file>
-
 <file path="src/renderer/helpers/request-builder.ts">
 import { Request, HttpMethod, KeyValue, BodyType, AuthType } from '../../shared/types';
 
@@ -859,244 +787,6 @@ export function buildRequest(
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
-}
-</file>
-
-<file path="src/renderer/helpers/response-handler.ts">
-import hljs from 'highlight.js';
-import { HttpResponse } from '../../shared/types';
-
-export type DisplayFormat = 'raw' | 'json' | 'html' | 'xml';
-
-export const getStatusText = (code: number): string => {
-  const statusTexts: Record<number, string> = {
-    200: 'OK', 201: 'Created', 204: 'No Content',
-    301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
-    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
-    404: 'Not Found', 405: 'Method Not Allowed',
-    500: 'Internal Server Error', 502: 'Bad Gateway',
-    503: 'Service Unavailable', 504: 'Gateway Timeout'
-  };
-  return statusTexts[code] || 'Unknown';
-};
-
-export const detectLanguage = (data: string): string => {
-  const trimmed = data.trim();
-  
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
-      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-    try {
-      JSON.parse(trimmed);
-      return 'json';
-    } catch {}
-  }
-  
-  if (trimmed.startsWith('<?xml') || 
-      (trimmed.startsWith('<') && trimmed.includes('</') && trimmed.endsWith('>'))) {
-    return 'xml';
-  }
-  
-  if (trimmed.toLowerCase().includes('<!doctype html') || 
-      trimmed.toLowerCase().includes('<html')) {
-    return 'html';
-  }
-  
-  return 'plaintext';
-};
-
-export const displayResponse = (
-  response: HttpResponse,
-  currentFormat: DisplayFormat,
-  resultDiv: HTMLDivElement,
-  statusCodeSpan: HTMLSpanElement,
-  responseTimeSpan: HTMLSpanElement,
-  responseSizeSpan: HTMLSpanElement
-): void => {
-  resultDiv.innerHTML = '';
-  
-  const codeBlock = document.createElement('pre');
-  codeBlock.style.margin = '0';
-  codeBlock.style.width = '100%';
-  codeBlock.style.overflow = 'visible';
-  
-  const codeElement = document.createElement('code');
-  codeElement.style.display = 'block';
-  codeElement.style.padding = '1rem';
-  codeElement.style.whiteSpace = 'pre';
-  codeElement.style.overflowWrap = 'normal';
-  codeElement.style.wordBreak = 'normal';
-  
-  const data = response.body;
-  
-  switch (currentFormat) {
-    case 'raw':
-      const detectedLang = detectLanguage(data);
-      codeElement.className = `language-${detectedLang}`;
-      codeElement.textContent = data;
-      break;
-      
-    case 'json':
-      try {
-        const parsed = JSON.parse(data);
-        const formatted = JSON.stringify(parsed, null, 2);
-        codeElement.className = 'language-json';
-        codeElement.textContent = formatted;
-      } catch {
-        codeElement.className = 'language-plaintext';
-        codeElement.textContent = 'Invalid JSON: ' + data;
-      }
-      break;
-      
-    case 'html':
-      codeElement.className = 'language-html';
-      codeElement.textContent = data;
-      break;
-      
-    case 'xml':
-      codeElement.className = 'language-xml';
-      codeElement.textContent = data;
-      break;
-  }
-  
-  codeBlock.appendChild(codeElement);
-  resultDiv.appendChild(codeBlock);
-  hljs.highlightElement(codeElement);
-  
-  statusCodeSpan.textContent = `${response.status} ${response.statusText}`;
-  statusCodeSpan.className = response.status >= 200 && response.status < 300 
-    ? 'text-green-400 font-semibold' 
-    : 'text-red-400 font-semibold';
-  
-  responseTimeSpan.textContent = `${response.time.toFixed(0)}ms`;
-  responseSizeSpan.textContent = `${(response.size / 1024).toFixed(2)}KB`;
-};
-</file>
-
-<file path="src/renderer/helpers/tab-manager.ts">
-import { Request, HttpResponse, HttpMethod } from '../../shared/types';
-
-export interface Tab {
-  id: string;
-  name: string;
-  request: Request;
-  response: HttpResponse | null;
-}
-
-export class TabManager {
-  private tabs: Tab[] = [];
-  private activeTabId: string = '';
-  private tabsContainer: HTMLDivElement;
-  private onTabChange: (tabId: string) => void;
-
-  constructor(tabsContainer: HTMLDivElement, onTabChange: (tabId: string) => void) {
-    this.tabsContainer = tabsContainer;
-    this.onTabChange = onTabChange;
-  }
-
-  createTab(request: Request): string {
-    const tab: Tab = {
-      id: Date.now().toString(),
-      name: 'New Request',
-      request,
-      response: null
-    };
-    
-    this.tabs.push(tab);
-    this.activeTabId = tab.id;
-    this.render();
-    return tab.id;
-  }
-
-  closeTab(tabId: string): void {
-    if (this.tabs.length === 1) return;
-    
-    const index = this.tabs.findIndex(t => t.id === tabId);
-    if (index === -1) return;
-    
-    this.tabs.splice(index, 1);
-    
-    if (this.activeTabId === tabId) {
-      this.activeTabId = this.tabs[Math.max(0, index - 1)].id;
-    }
-    
-    this.render();
-    this.onTabChange(this.activeTabId);
-  }
-
-  setActiveTab(tabId: string): void {
-    this.activeTabId = tabId;
-    this.render();
-    this.onTabChange(tabId);
-  }
-
-  getActiveTab(): Tab | null {
-    return this.tabs.find(t => t.id === this.activeTabId) || null;
-  }
-
-  updateActiveTab(request: Request, response: HttpResponse | null): void {
-    const tab = this.getActiveTab();
-    if (!tab) return;
-    
-    tab.request = request;
-    tab.response = response;
-    
-    // Update tab name based on URL
-    if (request.url) {
-      try {
-        const url = new URL(request.url);
-        const urlPath = url.pathname.split('/').filter(p => p).join('/') || url.hostname;
-        tab.name = `${request.method} ${urlPath.substring(0, 20)}${urlPath.length > 20 ? '...' : ''}`;
-      } catch {
-        tab.name = `${request.method} Request`;
-      }
-    } else {
-      tab.name = 'New Request';
-    }
-    
-    this.render();
-  }
-
-  getTabs(): Tab[] {
-    return this.tabs;
-  }
-
-  getActiveTabId(): string {
-    return this.activeTabId;
-  }
-
-  private render(): void {
-    this.tabsContainer.innerHTML = '';
-    
-    this.tabs.forEach(tab => {
-      const tabElement = document.createElement('div');
-      tabElement.className = `flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer ${
-        this.activeTabId === tab.id ? 'bg-gray-800 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-750'
-      }`;
-      
-      const tabName = document.createElement('span');
-      tabName.textContent = tab.name;
-      tabName.className = 'text-sm';
-      
-      const closeBtn = document.createElement('button');
-      closeBtn.textContent = '×';
-      closeBtn.className = 'text-lg hover:text-red-400 ml-2';
-      closeBtn.onclick = (e) => {
-        e.stopPropagation();
-        this.closeTab(tab.id);
-      };
-      
-      tabElement.onclick = () => {
-        this.setActiveTab(tab.id);
-      };
-      
-      tabElement.appendChild(tabName);
-      if (this.tabs.length > 1) {
-        tabElement.appendChild(closeBtn);
-      }
-      
-      this.tabsContainer.appendChild(tabElement);
-    });
-  }
 }
 </file>
 
@@ -1572,103 +1262,114 @@ export const createWindow = (): BrowserWindow => {
 };
 </file>
 
-<file path="src/renderer/helpers/key-value-renderer.ts">
-import { KeyValue } from '../../shared/types';
+<file path="src/renderer/helpers/project-renderer.ts">
+import { Project } from '../../shared/types';
 
-export function createKeyValueRow(
-  key: string = '',
-  value: string = '',
-  enabled: boolean = true,
-  onDelete: () => void,
-  onChange?: () => void,
-  sensitive: boolean = false, // NEW parameter
-  showSensitiveToggle: boolean = false // NEW parameter
-): HTMLDivElement {
-  const row = document.createElement('div');
-  row.className = 'flex gap-2 items-center mb-2';
-  
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = enabled;
-  checkbox.className = 'w-5 h-5';
-  if (onChange) {
-    checkbox.addEventListener('change', onChange);
-  }
-  
-  const keyInput = document.createElement('input');
-  keyInput.type = 'text';
-  keyInput.value = key;
-  keyInput.placeholder = 'Key';
-  keyInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
-  if (onChange) {
-    keyInput.addEventListener('input', onChange);
-  }
-  
-  const valueInput = document.createElement('input');
-  valueInput.type = sensitive ? 'password' : 'text';
-  valueInput.value = value;
-  valueInput.placeholder = 'Value';
-  valueInput.className = 'flex-1 bg-gray-800 text-white p-2 rounded border border-gray-700';
-  if (onChange) {
-    valueInput.addEventListener('input', onChange);
-  }
-  
-  // Add sensitive toggle if needed
-  if (showSensitiveToggle) {
-    const sensitiveBtn = document.createElement('button');
-    sensitiveBtn.type = 'button';
-    sensitiveBtn.className = sensitive 
-      ? 'bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-xl'
-      : 'bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-xl';
-    sensitiveBtn.textContent = '🔒';
-    sensitiveBtn.title = 'Mark as sensitive (encrypted storage)';
-    sensitiveBtn.onclick = () => {
-      const newSensitive = !sensitive;
-      sensitiveBtn.className = newSensitive
-        ? 'bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-xl'
-        : 'bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-xl';
-      valueInput.type = newSensitive ? 'password' : 'text';
-      if (onChange) onChange();
-    };
-    row.appendChild(sensitiveBtn);
-  }
-  
-  const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = '×';
-  deleteBtn.className = 'bg-red-600 hover:bg-red-700 px-3 py-2 rounded text-xl font-bold';
-  deleteBtn.onclick = onDelete;
-  
-  row.appendChild(checkbox);
-  row.appendChild(keyInput);
-  row.appendChild(valueInput);
-  row.appendChild(deleteBtn);
-  
-  return row;
+export interface ProjectCallbacks {
+  onLoadProject: (projectId: string) => void;
+  onEditProject: (project: Project) => void;
+  onExportProject: (project: Project) => void;
+  onDeleteProject: (projectId: string) => void;
 }
 
-export function renderKeyValueList(
+export function renderProjectList(
   container: HTMLDivElement,
-  items: KeyValue[],
-  onUpdate: () => void
+  projects: Project[],
+  callbacks: ProjectCallbacks
 ): void {
   container.innerHTML = '';
-  items.forEach((item, index) => {
-    const row = createKeyValueRow(item.key, item.value, item.enabled, () => {
-      items.splice(index, 1);
-      renderKeyValueList(container, items, onUpdate);
-      onUpdate();
-    }, onUpdate);
-    container.appendChild(row);
+  
+  if (projects.length === 0) {
+    container.innerHTML = '<div class="text-gray-400 text-center py-8 bg-[rgba(7,14,29,0.7)]">No projects yet. Create one to get started!</div>';
+    return;
+  }
+  
+  projects.forEach(project => {
+    const projectCard = document.createElement('div');
+    projectCard.className = 'bg-[rgba(7,14,29,0.7)] p-4 rounded mb-3 hover:bg-gray-750 cursor-pointer';
+    
+    projectCard.innerHTML = `
+      <div class="flex justify-between items-start mb-2">
+        <div class="flex-1">
+          <h3 class="text-lg font-semibold text-white mb-1">${project.name}</h3>
+          ${project.description ? `<p class="text-sm text-gray-400 mb-2">${project.description}</p>` : ''}
+          ${project.baseUrl ? `<p class="text-xs text-blue-400">Base URL: ${project.baseUrl}</p>` : ''}
+        </div>
+        <div class="flex gap-2">
+          <button class="edit-project px-3 py-1 text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">Edit</button>
+          <button class="export-project px-3 py-1 overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10 text-sm">Export</button>
+          <button class="delete-project px-3 py-1 overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10 text-sm">Delete</button>
+        </div>
+      </div>
+      <div class="text-xs text-gray-500">
+        ${project.folders.length} folder(s), ${project.requests.length} request(s)
+      </div>
+    `;
+    
+    projectCard.onclick = (e) => {
+      if (!(e.target as HTMLElement).classList.contains('edit-project') && 
+          !(e.target as HTMLElement).classList.contains('delete-project') &&
+          !(e.target as HTMLElement).classList.contains('export-project')) {
+        callbacks.onLoadProject(project.id);
+      }
+    };
+    
+    projectCard.querySelector('.edit-project')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      callbacks.onEditProject(project);
+    });
+    
+    projectCard.querySelector('.export-project')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      callbacks.onExportProject(project);
+    });
+    
+    projectCard.querySelector('.delete-project')?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      callbacks.onDeleteProject(project.id);
+    });
+    
+    container.appendChild(projectCard);
   });
-}
-
-export function addKeyValue(
-  items: KeyValue[],
-  container: HTMLDivElement,
-  onUpdate: () => void
-): void {
-  items.push({ key: '', value: '', enabled: true });
-  renderKeyValueList(container, items, onUpdate);
 }
 </file>
 
@@ -1863,6 +1564,388 @@ export function loadRequestIntoUI(
 }
 </file>
 
+<file path="src/renderer/helpers/response-handler.ts">
+import hljs from 'highlight.js';
+import { HttpResponse } from '../../shared/types';
+
+export type DisplayFormat = 'raw' | 'json' | 'html' | 'xml';
+
+export const getStatusText = (code: number): string => {
+  const statusTexts: Record<number, string> = {
+    200: 'OK', 201: 'Created', 204: 'No Content',
+    301: 'Moved Permanently', 302: 'Found', 304: 'Not Modified',
+    400: 'Bad Request', 401: 'Unauthorized', 403: 'Forbidden',
+    404: 'Not Found', 405: 'Method Not Allowed',
+    500: 'Internal Server Error', 502: 'Bad Gateway',
+    503: 'Service Unavailable', 504: 'Gateway Timeout'
+  };
+  return statusTexts[code] || 'Unknown';
+};
+
+export const detectLanguage = (data: string): string => {
+  const trimmed = data.trim();
+  
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      JSON.parse(trimmed);
+      return 'json';
+    } catch {}
+  }
+  
+  if (trimmed.startsWith('<?xml') || 
+      (trimmed.startsWith('<') && trimmed.includes('</') && trimmed.endsWith('>'))) {
+    return 'xml';
+  }
+  
+  if (trimmed.toLowerCase().includes('<!doctype html') || 
+      trimmed.toLowerCase().includes('<html')) {
+    return 'html';
+  }
+  
+  return 'plaintext';
+};
+
+export const displayResponse = (
+  response: HttpResponse,
+  currentFormat: DisplayFormat,
+  resultDiv: HTMLDivElement,
+  statusCodeSpan: HTMLSpanElement,
+  responseTimeSpan: HTMLSpanElement,
+  responseSizeSpan: HTMLSpanElement
+): void => {
+  resultDiv.innerHTML = '';
+  
+  const codeBlock = document.createElement('pre');
+  codeBlock.style.margin = '0';
+  codeBlock.style.width = '100%';
+  codeBlock.style.overflow = 'visible';
+  
+  const codeElement = document.createElement('code');
+  codeElement.style.display = 'block';
+  codeElement.style.padding = '1rem';
+  codeElement.style.whiteSpace = 'pre';
+  codeElement.style.overflowWrap = 'normal';
+  codeElement.style.wordBreak = 'normal';
+  codeElement.style.setProperty('background-color', 'rgba(7,14,29,0.7)', 'important');
+  
+  const data = response.body;
+  
+  switch (currentFormat) {
+    case 'raw':
+      const detectedLang = detectLanguage(data);
+      codeElement.className = `language-${detectedLang}`;
+      codeElement.textContent = data;
+      break;
+      
+    case 'json':
+      try {
+        const parsed = JSON.parse(data);
+        const formatted = JSON.stringify(parsed, null, 2);
+        codeElement.className = 'language-json';
+        codeElement.textContent = formatted;
+      } catch {
+        codeElement.className = 'language-plaintext';
+        codeElement.textContent = 'Invalid JSON: ' + data;
+      }
+      break;
+      
+    case 'html':
+      codeElement.className = 'language-html';
+      codeElement.textContent = data;
+      break;
+      
+    case 'xml':
+      codeElement.className = 'language-xml';
+      codeElement.textContent = data;
+      break;
+  }
+  
+  codeBlock.appendChild(codeElement);
+  resultDiv.appendChild(codeBlock);
+  hljs.highlightElement(codeElement);
+  
+  statusCodeSpan.textContent = `${response.status} ${response.statusText}`;
+  statusCodeSpan.className = response.status >= 200 && response.status < 300 
+    ? 'text-green-400 font-semibold' 
+    : 'text-red-400 font-semibold';
+  
+  responseTimeSpan.textContent = `${response.time.toFixed(0)}ms`;
+  responseSizeSpan.textContent = `${(response.size / 1024).toFixed(2)}KB`;
+};
+</file>
+
+<file path="src/renderer/helpers/tab-manager.ts">
+import { Request, HttpResponse, HttpMethod } from '../../shared/types';
+
+export interface Tab {
+  id: string;
+  name: string;
+  request: Request;
+  response: HttpResponse | null;
+}
+
+export class TabManager {
+  private tabs: Tab[] = [];
+  private activeTabId: string = '';
+  private tabsContainer: HTMLDivElement;
+  private onTabChange: (tabId: string) => void;
+
+  constructor(tabsContainer: HTMLDivElement, onTabChange: (tabId: string) => void) {
+    this.tabsContainer = tabsContainer;
+    this.onTabChange = onTabChange;
+  }
+
+  createTab(request: Request): string {
+    const tab: Tab = {
+      id: Date.now().toString(),
+      name: 'New Request',
+      request,
+      response: null
+    };
+    
+    this.tabs.push(tab);
+    this.activeTabId = tab.id;
+    this.render();
+    return tab.id;
+  }
+
+  closeTab(tabId: string): void {
+    if (this.tabs.length === 1) return;
+    
+    const index = this.tabs.findIndex(t => t.id === tabId);
+    if (index === -1) return;
+    
+    this.tabs.splice(index, 1);
+    
+    if (this.activeTabId === tabId) {
+      this.activeTabId = this.tabs[Math.max(0, index - 1)].id;
+    }
+    
+    this.render();
+    this.onTabChange(this.activeTabId);
+  }
+
+  setActiveTab(tabId: string): void {
+    this.activeTabId = tabId;
+    this.render();
+    this.onTabChange(tabId);
+  }
+
+  getActiveTab(): Tab | null {
+    return this.tabs.find(t => t.id === this.activeTabId) || null;
+  }
+
+  updateActiveTab(request: Request, response: HttpResponse | null): void {
+    const tab = this.getActiveTab();
+    if (!tab) return;
+    
+    tab.request = request;
+    tab.response = response;
+    
+    // Update tab name based on URL
+    if (request.url) {
+      try {
+        const url = new URL(request.url);
+        const urlPath = url.pathname.split('/').filter(p => p).join('/') || url.hostname;
+        tab.name = `${request.method} ${urlPath.substring(0, 20)}${urlPath.length > 20 ? '...' : ''}`;
+      } catch {
+        tab.name = `${request.method} Request`;
+      }
+    } else {
+      tab.name = 'New Request';
+    }
+    
+    this.render();
+  }
+
+  getTabs(): Tab[] {
+    return this.tabs;
+  }
+
+  getActiveTabId(): string {
+    return this.activeTabId;
+  }
+
+  private render(): void {
+    this.tabsContainer.innerHTML = '';
+    
+    this.tabs.forEach(tab => {
+      const tabElement = document.createElement('div');
+      tabElement.className = `flex items-center gap-2 px-4 py-2 rounded-t cursor-pointer transition-all duration-300 ${
+        this.activeTabId === tab.id ? 'bg-[rgba(7,14,29,0.7)] text-white hover:bg-[rgba(7,14,29,0.9)]' : 'bg-gray-700 text-gray-400 hover:bg-[rgba(7,14,29,0.9)]'
+      }`;
+      
+      const tabName = document.createElement('span');
+      tabName.textContent = tab.name;
+      tabName.className = 'text-sm';
+      
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '×';
+      closeBtn.className = 'text-lg hover:text-red-400 ml-2';
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.closeTab(tab.id);
+      };
+      
+      tabElement.onclick = () => {
+        this.setActiveTab(tab.id);
+      };
+      
+      tabElement.appendChild(tabName);
+      if (this.tabs.length > 1) {
+        tabElement.appendChild(closeBtn);
+      }
+      
+      this.tabsContainer.appendChild(tabElement);
+    });
+  }
+}
+</file>
+
+<file path="tailwind.config.js">
+module.exports = {
+  content: ["./*.html", "./dist/**/*.js"],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+</file>
+
+<file path="src/renderer/helpers/key-value-renderer.ts">
+import { KeyValue } from '../../shared/types';
+
+export function createKeyValueRow(
+  key: string = '',
+  value: string = '',
+  enabled: boolean = true,
+  onDelete: () => void,
+  onChange?: () => void,
+  sensitive: boolean = false,
+  showSensitiveToggle: boolean = false
+): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'flex gap-2 items-center mb-2';
+  
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = enabled;
+  checkbox.className = 'w-5 h-5 rounded border border-gray-700 accent-[rgb(7,14,29)] cursor-pointer bg-[rgba(7,14,29,1.0)]';
+  if (onChange) {
+    checkbox.addEventListener('change', onChange);
+  }
+  
+  const keyInput = document.createElement('input');
+  keyInput.type = 'text';
+  keyInput.value = key;
+  keyInput.placeholder = 'Key';
+  keyInput.className = 'flex-1 bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700';
+  if (onChange) {
+    keyInput.addEventListener('input', onChange);
+  }
+  
+  const valueInput = document.createElement('input');
+  valueInput.type = sensitive ? 'password' : 'text';
+  valueInput.value = value;
+  valueInput.placeholder = 'Value';
+  valueInput.className = 'flex-1 bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700';
+  if (onChange) {
+    valueInput.addEventListener('input', onChange);
+  }
+  
+  // Add sensitive toggle if needed
+  if (showSensitiveToggle) {
+    const sensitiveBtn = document.createElement('button');
+    sensitiveBtn.type = 'button';
+    sensitiveBtn.className = sensitive 
+      ? 'bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-xl'
+      : 'bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-xl';
+    sensitiveBtn.textContent = '🔒';
+    sensitiveBtn.title = 'Mark as sensitive (encrypted storage)';
+    sensitiveBtn.onclick = () => {
+      const newSensitive = !sensitive;
+      sensitiveBtn.className = newSensitive
+        ? 'bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-xl'
+        : 'bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-xl';
+      valueInput.type = newSensitive ? 'password' : 'text';
+      if (onChange) onChange();
+    };
+    row.appendChild(sensitiveBtn);
+  }
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '×';
+  deleteBtn.className = "px-3 py-2text-xl font-bold overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer bg-[rgba(17,24,39,0.3)] backdrop-blur-xs shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)] transition-all duration-500 ease-in-out hover:backdrop-blur-md hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)] before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent before:skew-x-[-25deg] before:transition-all before:duration-500 before:ease-in-out hover:before:left-[150%] active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)] active:duration-10";
+  deleteBtn.onclick = onDelete;
+  
+  row.appendChild(checkbox);
+  row.appendChild(keyInput);
+  row.appendChild(valueInput);
+  row.appendChild(deleteBtn);
+  
+  return row;
+}
+
+export function renderKeyValueList(
+  container: HTMLDivElement,
+  items: KeyValue[],
+  onUpdate: () => void
+): void {
+  container.innerHTML = '';
+  items.forEach((item, index) => {
+    const row = createKeyValueRow(item.key, item.value, item.enabled, () => {
+      items.splice(index, 1);
+      renderKeyValueList(container, items, onUpdate);
+      onUpdate();
+    }, onUpdate);
+    container.appendChild(row);
+  });
+}
+
+export function addKeyValue(
+  items: KeyValue[],
+  container: HTMLDivElement,
+  onUpdate: () => void
+): void {
+  items.push({ key: '', value: '', enabled: true });
+  renderKeyValueList(container, items, onUpdate);
+}
+</file>
+
+<file path="tsconfig.renderer.json">
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ES2020",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true
+  },
+  "include": ["src/renderer/**/*", "src/shared/**/*"],
+  "exclude": ["node_modules"]
+}
+</file>
+
+<file path=".gitignore">
+node_modules
+/node_modules
+*node_modules/*
+
+release
+/release
+*release/*
+
+styles.css
+
+dist
+</file>
+
 <file path="src/renderer/helpers/sidebar-renderer.ts">
 import { Project, Folder, Request } from '../../shared/types';
 import { methodColors } from './request-builder';
@@ -1892,14 +1975,14 @@ export function renderSidebar(
   
   // Add New Folder Button
   const newFolderBtn = document.createElement('button');
-  newFolderBtn.className = 'w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded mb-4 text-sm';
+  newFolderBtn.className = "w-full px-3 py-2 mb-4 text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative bg-[rgba(17,24,39,0.3)] backdrop-blur-xs shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)] transition-all duration-500 ease-in-out hover:backdrop-blur-md hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)] before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent before:skew-x-[-25deg] before:transition-all before:duration-500 before:ease-in-out hover:before:left-[150%] active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)] active:duration-10";
   newFolderBtn.textContent = '+ New Folder';
   newFolderBtn.onclick = callbacks.onNewFolder;
   container.appendChild(newFolderBtn);
   
   // Add New Request Button
   const newRequestBtn = document.createElement('button');
-  newRequestBtn.className = 'w-full bg-green-600 hover:bg-green-700 px-3 py-2 rounded mb-4 text-sm';
+  newRequestBtn.className = "w-full px-3 py-2 mb-4 text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative bg-[rgba(17,24,39,0.3)] backdrop-blur-xs shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)] transition-all duration-500 ease-in-out hover:backdrop-blur-md hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)] before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent before:skew-x-[-25deg] before:transition-all before:duration-500 before:ease-in-out hover:before:left-[150%] active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)] active:duration-10";
   newRequestBtn.textContent = '+ New Request';
   newRequestBtn.onclick = callbacks.onNewRequest;
   container.appendChild(newRequestBtn);
@@ -1931,22 +2014,48 @@ function renderFolder(
   
   const folderName = document.createElement('div');
   folderName.className = 'flex items-center gap-2';
-  folderName.innerHTML = `<span>📁</span><span class="text-sm">${folder.name}</span>`;
+  folderName.innerHTML = `<span><svg class="w-5 h-5 inline-block mb-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#ffffff"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M3 8.2C3 7.07989 3 6.51984 3.21799 6.09202C3.40973 5.71569 3.71569 5.40973 4.09202 5.21799C4.51984 5 5.0799 5 6.2 5H9.67452C10.1637 5 10.4083 5 10.6385 5.05526C10.8425 5.10425 11.0376 5.18506 11.2166 5.29472C11.4184 5.4184 11.5914 5.59135 11.9373 5.93726L12.0627 6.06274C12.4086 6.40865 12.5816 6.5816 12.7834 6.70528C12.9624 6.81494 13.1575 6.89575 13.3615 6.94474C13.5917 7 13.8363 7 14.3255 7H17.8C18.9201 7 19.4802 7 19.908 7.21799C20.2843 7.40973 20.5903 7.71569 20.782 8.09202C21 8.51984 21 9.0799 21 10.2V15.8C21 16.9201 21 17.4802 20.782 17.908C20.5903 18.2843 20.2843 18.5903 19.908 18.782C19.4802 19 18.9201 19 17.8 19H6.2C5.07989 19 4.51984 19 4.09202 18.782C3.71569 18.5903 3.40973 18.2843 3.21799 17.908C3 17.4802 3 16.9201 3 15.8V8.2Z" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path> </g></svg></span><span class="text-sm">${folder.name}</span>`;
   
   const folderActions = document.createElement('div');
   folderActions.className = 'flex gap-1';
   
   const addRequestBtn = document.createElement('button');
   addRequestBtn.textContent = '+';
-  addRequestBtn.className = 'bg-green-600 hover:bg-green-700 px-2 py-1 rounded text-xs';
+  addRequestBtn.className = `px-2 py-1 text-xs overflow-hidden border border-gray-400 rounded-md cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10`;
   addRequestBtn.onclick = (e) => {
     e.stopPropagation();
     callbacks.onAddRequestToFolder(folder.id);
   };
   
   const addSubfolderBtn = document.createElement('button');
-  addSubfolderBtn.textContent = '📁';
-  addSubfolderBtn.className = 'bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs';
+  addSubfolderBtn.innerHTML = `<svg class="w-4 h-4 inline-block mb-1" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#ffffff"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round" stroke="#CCCCCC" stroke-width="0.672"></g><g id="SVGRepo_iconCarrier"> <path d="M9 13H15M12 10V16M12.0627 6.06274L11.9373 5.93726C11.5914 5.59135 11.4184 5.4184 11.2166 5.29472C11.0376 5.18506 10.8425 5.10425 10.6385 5.05526C10.4083 5 10.1637 5 9.67452 5H6.2C5.0799 5 4.51984 5 4.09202 5.21799C3.71569 5.40973 3.40973 5.71569 3.21799 6.09202C3 6.51984 3 7.07989 3 8.2V15.8C3 16.9201 3 17.4802 3.21799 17.908C3.40973 18.2843 3.71569 18.5903 4.09202 18.782C4.51984 19 5.07989 19 6.2 19H17.8C18.9201 19 19.4802 19 19.908 18.782C20.2843 18.5903 20.5903 18.2843 20.782 17.908C21 17.4802 21 16.9201 21 15.8V10.2C21 9.0799 21 8.51984 20.782 8.09202C20.5903 7.71569 20.2843 7.40973 19.908 7.21799C19.4802 7 18.9201 7 17.8 7H14.3255C13.8363 7 13.5917 7 13.3615 6.94474C13.1575 6.89575 12.9624 6.81494 12.7834 6.70528C12.5816 6.5816 12.4086 6.40865 12.0627 6.06274Z" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path> </g></svg>`;
+  addSubfolderBtn.className = `px-2 py-1 overflow-hidden border border-gray-400 rounded-md cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10`;
   addSubfolderBtn.onclick = (e) => {
     e.stopPropagation();
     callbacks.onAddSubfolder(folder.id);
@@ -1954,7 +2063,20 @@ function renderFolder(
   
   const deleteFolderBtn = document.createElement('button');
   deleteFolderBtn.textContent = '×';
-  deleteFolderBtn.className = 'bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs';
+  deleteFolderBtn.className = `px-2 py-1 text-xs overflow-hidden border border-gray-400 rounded-md cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10`;
   deleteFolderBtn.onclick = (e) => {
     e.stopPropagation();
     callbacks.onDeleteFolder(folder.id);
@@ -2025,49 +2147,6 @@ function renderRequest(
 }
 </file>
 
-<file path="tailwind.config.js">
-module.exports = {
-  content: ["./*.html", "./dist/**/*.js"],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
-}
-</file>
-
-<file path="tsconfig.renderer.json">
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "ES2020",
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true
-  },
-  "include": ["src/renderer/**/*", "src/shared/**/*"],
-  "exclude": ["node_modules"]
-}
-</file>
-
-<file path=".gitignore">
-node_modules
-/node_modules
-*node_modules/*
-
-release
-/release
-*release/*
-
-styles.css
-
-dist
-</file>
-
 <file path="readme.md">
 # Req-Rep.io
 
@@ -2094,36 +2173,6 @@ In case you want an intuitive app with GUI since curl is a command line tool and
 If the final project's size is too large, please download the source code and build it yourself.
 
 Any and all suggestions are welcome.
-</file>
-
-<file path="src/styles/input.css">
-@import 'highlight.js/styles/atom-one-dark.css';
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer components {
-  #result {
-    overflow: auto !important;
-  }
-  
-  #result pre {
-    margin: 0 !important;
-    background: transparent !important;
-    white-space: pre-wrap !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-  }
-  
-  #result code {
-    display: block !important;
-    padding: 1rem !important;
-    white-space: pre-wrap !important;
-    word-wrap: break-word !important;
-    overflow-wrap: break-word !important;
-  }
-}
 </file>
 
 <file path="tsconfig.json">
@@ -2196,6 +2245,59 @@ contextBridge.exposeInMainWorld('electron', {
   importRequest: (): Promise<Request | null> => 
     ipcRenderer.invoke('request:import'),
 });
+</file>
+
+<file path="src/styles/input.css">
+@import 'highlight.js/styles/atom-one-dark.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  #result {
+    overflow: auto !important;
+  }
+  
+  #result pre {
+    margin: 0 !important;
+    background: transparent !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+  
+  #result code {
+    display: block !important;
+    padding: 1rem !important;
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+  }
+
+  /* Custom checkbox styles */
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    background-color: rgb(7, 14, 29);
+    border: 1px solid rgb(55, 65, 81);
+    cursor: pointer;
+  }
+  
+  input[type="checkbox"]:checked {
+    background-color: rgb(7, 14, 29);
+    border-color: rgb(255, 255, 255);
+  }
+  
+  input[type="checkbox"]:checked::before {
+    content: "✓";
+    display: block;
+    text-align: center;
+    color: white;
+    font-size: 14px;
+    line-height: 1.25rem;
+  }
+}
 </file>
 
 <file path="src/shared/types.ts">
@@ -2578,10 +2680,49 @@ export const registerHandlers = (): void => {
 };
 </file>
 
+<file path="todo.md">
+# TODO
+
+## documentation :
+
+- Once everything is finished, create a documentation file
+- Explain in detail the GUI and how it works
+- Explain in detail the functionality
+- Explain in detail every file
+
+## functionality :
+
+- Add support for cookies
+
+## UI :
+
+- Fix any missing UI elements
+- Fix any UI elements that are not working / bugging
+
+- Hide the default electron menu <- Start with this
+- Add icons
+
+## Website :
+
+- Create a branch for the website
+- Create a website for the app
+- Locally create the website files in a different folder to avoid conflicts and confusion
+
+## Localization :
+
+- Try to add localization
+
+## Problems :
+
+- Opening a new tab while having selected a project puts it automatically in the project
+
+- On adding fields the previous ones go away
+</file>
+
 <file path="package.json">
 {
-  "name": "reqio-electron",
-  "version": "0.0.1a",
+  "name": "req-rep.io-electron",
+  "version": "0.1.8-a",
   "description": "App to test API endpoints using curl and electron",
   "license": "ISC",
   "author": "Sigmund Frost",
@@ -2626,42 +2767,6 @@ export const registerHandlers = (): void => {
     }
   }
 }
-</file>
-
-<file path="todo.md">
-# TODO
-
-## documentation :
-
-- Once everything is finished, create a documentation file
-- Explain in detail the GUI and how it works
-- Explain in detail the functionality
-- Explain in detail every file
-
-## functionality :
-
-- Add support for cookies
-
-## UI :
-
-- Add dark mode
-- Add light mode
-- Add system mode
-
-- Fix any missing UI elements
-- Fix any UI elements that are not working / bugging
-
-- Can't use the url input after closing a tab
-
-## Website :
-
-- Create a branch for the website
-- Create a website for the app
-- Locally create the website files in a different folder to avoid conflicts and confusion
-
-## Localization :
-
-- Try to add localization
 </file>
 
 <file path="src/renderer/index.ts">
@@ -2835,7 +2940,6 @@ document.getElementById('toggle-bearer-token')?.addEventListener('click', () => 
 const tabManager = new TabManager(tabsContainer, (tabId) => {
   loadTabById(tabId);
   renderSidebarUI();
-  renderSidebarUI();
 });
 
 // Project Functions
@@ -2874,8 +2978,6 @@ function debouncedSaveCurrentTab(): void {
   }
   
   saveDebounceTimer = window.setTimeout(() => {
-    const tab = tabManager.getActiveTab();
-    
     saveCurrentTab();
     markUnsavedChanges();
     autoSaveProject();
@@ -2919,7 +3021,6 @@ function saveCurrentTab(): void {
   // Update request in project if it belongs to one
   if (currentProject && request.projectId === currentProject.id) {
     updateRequestInProject(request, currentProject);
-    console.log('Request updated in project:', request.id, request.name);
     markUnsavedChanges();
     // Re-render sidebar to show updated request
     renderSidebarUI();
@@ -3030,6 +3131,15 @@ function loadTabById(tabId: string): void {
   const tab = tabManager.getTabs().find(t => t.id === tabId);
   if (!tab) return;
   
+  // Store the current focused element
+  const activeElement = document.activeElement as HTMLElement;
+  const wasFocused = activeElement && (
+    activeElement === urlInput ||
+    paramsContainer.contains(activeElement) ||
+    headersContainer.contains(activeElement) ||
+    bodyFormDataContainer.contains(activeElement)
+  );
+  
   loadRequestIntoUI(
     tab.request,
     {
@@ -3058,6 +3168,13 @@ function loadTabById(tabId: string): void {
     }
   );
   
+  // Restore focus if needed
+  if (wasFocused && activeElement === urlInput) {
+    setTimeout(() => {
+      urlInput.focus();
+    }, 0);
+  }
+  
   // Update breadcrumbs
   updateBreadcrumbs(tab.request);
   
@@ -3079,7 +3196,7 @@ function switchTab(tab: TabType) {
   currentTab = tab;
   
   [paramsTab, headersTab, bodyTab, authTab].forEach(t => {
-    t.classList.remove('border-blue-500', 'text-blue-500');
+    t.classList.remove('border-blue-500', 'text-white');
     t.classList.add('border-transparent', 'text-gray-400');
   });
   
@@ -3087,22 +3204,22 @@ function switchTab(tab: TabType) {
   
   switch (tab) {
     case 'params':
-      paramsTab.classList.add('border-blue-500', 'text-blue-500');
+      paramsTab.classList.add('border-blue-500', 'text-white');
       paramsTab.classList.remove('text-gray-400');
       paramsPanel.classList.remove('hidden');
       break;
     case 'headers':
-      headersTab.classList.add('border-blue-500', 'text-blue-500');
+      headersTab.classList.add('border-blue-500', 'text-white');
       headersTab.classList.remove('text-gray-400');
       headersPanel.classList.remove('hidden');
       break;
     case 'body':
-      bodyTab.classList.add('border-blue-500', 'text-blue-500');
+      bodyTab.classList.add('border-blue-500', 'text-white');
       bodyTab.classList.remove('text-gray-400');
       bodyPanel.classList.remove('hidden');
       break;
     case 'auth':
-      authTab.classList.add('border-blue-500', 'text-blue-500');
+      authTab.classList.add('border-blue-500', 'text-white');
       authTab.classList.remove('text-gray-400');
       authPanel.classList.remove('hidden');
       break;
@@ -3646,7 +3763,7 @@ loadProjects().then(() => {
   <body class="bg-gray-900 text-white">
     <div class="flex h-screen">
       <!-- Sidebar -->
-      <div class="w-64 p-4 bg-[rgba(255,255,255,0.1)] overflow-y-auto border-gray-700
+      <div class="w-64 p-4 bg-[rgba(7,14,29,0.5)] overflow-y-auto border-gray-700
                 overflow-hidden border border-l-0 border-gray-400 rounded-r-md px-4 py-2 text-lg
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_5px_5px_-2.5px_rgba(255,255,255,0.25),_inset_-5px_0_5px_-2.5px_rgba(255,255,255,0.25),_inset_0_-5px_5px_-2.5px_rgba(255,255,255,0.25)]
@@ -3656,7 +3773,20 @@ loadProjects().then(() => {
         <div class="mb-4">
           <h2 class="text-lg font-bold mb-2">Project</h2>
           <div class="text-sm text-gray-400 mb-2" id="current-project-name">No Project</div>
-          <button id="project-dashboard" class="w-full bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded text-sm">
+          <button id="project-dashboard" class="w-full px-3 py-2 text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">
             Projects
           </button>
         </div>
@@ -3676,14 +3806,12 @@ loadProjects().then(() => {
         <!-- URL Bar -->
         <div class="mb-4 flex items-center gap-3">
           <div class="relative">
-            <!--Change the UI to glass here-->
-            <button id="method-button" class="bg-gray-800 text-green-600 font-semibold px-4 py-2 rounded cursor-pointer hover:bg-gray-700 min-w-[120px] text-left flex items-center justify-between gap-3">
+            <button id="method-button" class="text-green-600 font-semibold px-4 py-2 rounded cursor-pointer min-w-[120px] text-left flex items-center justify-between gap-3 bg-[rgba(7,14,29,0.7)] hover:bg-[rgba(7,14,29,0.9)] transition-all duration-300 border border-gray-700">
               <span id="method-text">GET</span>
               <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="#A9AEC1" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
               </svg>
             </button>
-            <!--Change the UI to glass here-->
             <div id="method-dropdown" class="hidden absolute top-full left-0 mt-1 bg-gray-800 rounded shadow-lg border border-gray-700 min-w-[120px] z-50">
               <div data-method="GET" class="px-4 py-2 text-green-600 hover:bg-gray-700 cursor-pointer font-semibold">GET</div>
               <div data-method="POST" class="px-4 py-2 text-yellow-600 hover:bg-gray-700 cursor-pointer font-semibold">POST</div>
@@ -3694,11 +3822,10 @@ loadProjects().then(() => {
               <div data-method="OPTIONS" class="px-4 py-2 text-purple-600 hover:bg-gray-700 cursor-pointer font-semibold">OPTIONS</div>
             </div>
           </div>
-          <!--Change the UI to glass here-->
-          <input type="text" id="url" class="text-white bg-gray-800 p-2 rounded flex-1 border border-gray-700" placeholder="Enter URL or use {{baseUrl}}">
+          <input type="text" id="url" class="text-white p-2 min-w-[15rem] bg-[rgba(7,14,29,0.7)] rounded-md" placeholder="Enter URL or use {{baseUrl}}">
           <button id="fetch" class="font-semibold
                 overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
-                bg-[rgba(102,156,255,0.3)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
                 transition-all duration-500 ease-in-out
@@ -3713,7 +3840,7 @@ loadProjects().then(() => {
                 active:duration-10
           ">Send</button>
           <button id="save-request" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
-                bg-[rgba(121,255,132,0.3)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
                 transition-all duration-500 ease-in-out
@@ -3727,7 +3854,7 @@ loadProjects().then(() => {
                 active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
                 active:duration-10">Save</button>
           <button id="load-request" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
-                bg-[rgba(255,178,131,0.3)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
                 transition-all duration-500 ease-in-out
@@ -3741,7 +3868,7 @@ loadProjects().then(() => {
                 active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
                 active:duration-10">Load</button>
           <button id="view-history" class="overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
-                bg-[rgba(192,131,255,0.3)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
                 transition-all duration-500 ease-in-out
@@ -3756,42 +3883,87 @@ loadProjects().then(() => {
                 active:duration-10">History</button>
         </div>
 
-        <!--Change the UI to glass here-->
         <!-- Breadcrumbs and Context -->
-        <div class="mb-3 flex items-center justify-between bg-gray-800 px-4 py-2 rounded">
-          <div id="breadcrumb-container" class="flex items-center"></div>
-          <!--Change the UI to glass here-->
-          <button id="add-to-project" class="hidden bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">
+        <div class="mb-3 min-h-[3rem] flex items-center justify-between
+                    overflow-hidden border border-gray-400 rounded-md px-4 py-2
+                    bg-[rgba(17,24,39,0.3)]
+                    backdrop-blur-xs
+                    shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                    transition-all duration-500 ease-in-out
+                    hover:backdrop-blur-md">
+          <div id="breadcrumb-container" class="flex items-center">Root</div>
+          <button id="add-to-project" class="hidden text-sm
+          
+                overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">
             + Add to Project
           </button>
         </div>
         
+        <!-- Fix the color of the text -->
         <!-- Tabs -->
         <div class="flex border-b border-gray-700 mb-4">
-          <button id="params-tab" class="px-4 py-2 border-b-2 border-blue-500 text-blue-500 font-semibold">Query Params</button>
-          <button id="headers-tab" class="px-4 py-2 border-b-2 border-transparent text-gray-400 font-semibold">Headers</button>
-          <button id="body-tab" class="px-4 py-2 border-b-2 border-transparent text-gray-400 font-semibold">Body</button>
-          <button id="auth-tab" class="px-4 py-2 border-b-2 border-transparent text-gray-400 font-semibold">Auth</button>
+          <button id="params-tab" class="px-4 py-2 font-semibold">Query Params</button>
+          <button id="headers-tab" class="px-4 py-2 font-semibold">Headers</button>
+          <button id="body-tab" class="px-4 py-2 font-semibold">Body</button>
+          <button id="auth-tab" class="px-4 py-2 font-semibold">Auth</button>
         </div>
         
         <!-- Params Panel -->
         <div id="params-panel" class="mb-4">
           <div id="params-container" class="mb-2"></div>
           <!--Change the UI to glass here-->
-          <button id="add-param" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Parameter</button>
+          <button id="add-param" class="text-sm
+                                        overflow-hidden border border-gray-400 rounded-md px-4 py-2 cursor-pointer
+                                        bg-[rgba(17,24,39,0.3)]
+                                        backdrop-blur-xs
+                                        shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                                        transition-all duration-500 ease-in-out
+                                        hover:backdrop-blur-md
+                                        hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                                        before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                                        before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                                        before:skew-x-[-25deg]
+                                        before:transition-all before:duration-500 before:ease-in-out
+                                        hover:before:left-[150%]
+                                        active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                                        active:duration-10">+ Add Parameter</button>
         </div>
         
         <!-- Headers Panel -->
         <div id="headers-panel" class="mb-4 hidden">
           <div id="headers-container" class="mb-2"></div>
-          <!--Change the UI to glass here-->
-          <button id="add-header" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Header</button>
+          <button id="add-header" class="text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 cursor-pointer
+                                        bg-[rgba(17,24,39,0.3)]
+                                        backdrop-blur-xs
+                                        shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                                        transition-all duration-500 ease-in-out
+                                        hover:backdrop-blur-md
+                                        hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                                        before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                                        before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                                        before:skew-x-[-25deg]
+                                        before:transition-all before:duration-500 before:ease-in-out
+                                        hover:before:left-[150%]
+                                        active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                                        active:duration-10">+ Add Header</button>
         </div>
         
-        <!--Change the UI to glass here-->
         <!-- Body Panel -->
         <div id="body-panel" class="mb-4 hidden">
-          <select id="body-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
+          <select id="body-type" class="bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700 mb-3">
             <option value="none">None</option>
             <option value="json">JSON</option>
             <option value="raw">Raw</option>
@@ -3799,25 +3971,37 @@ loadProjects().then(() => {
             <option value="x-www-form-urlencoded">x-www-form-urlencoded</option>
           </select>
           
-          <!--Change the UI to glass here-->
           <div id="body-raw-container" class="hidden">
-            <textarea id="body-raw" class="w-full bg-gray-800 text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder="Enter raw body"></textarea>
+            <textarea id="body-raw" class="w-full bg-[rgba(7,14,29,0.5)] text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder="Enter raw body"></textarea>
           </div>
           
           <div id="body-json-container" class="hidden">
-            <textarea id="body-json" class="w-full bg-gray-800 text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder='{"key": "value"}'></textarea>
+            <textarea id="body-json" class="w-full bg-[rgba(7,14,29,0.5)] text-white p-3 rounded border border-gray-700 font-mono" rows="8" placeholder='{"key": "value"}'></textarea>
           </div>
           
           <div id="body-form-container" class="hidden">
             <div id="body-formdata-container" class="mb-2"></div>
-            <button id="add-form-field" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Field</button>
+            <button id="add-form-field" class="px-4 py-2 text-sm
+                                              overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer
+                                              bg-[rgba(17,24,39,0.3)]
+                                              backdrop-blur-xs
+                                              shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                                              transition-all duration-500 ease-in-out
+                                              hover:backdrop-blur-md
+                                              hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                                              before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                                              before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                                              before:skew-x-[-25deg]
+                                              before:transition-all before:duration-500 before:ease-in-out
+                                              hover:before:left-[150%]
+                                              active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                                              active:duration-10">+ Add Field</button>
           </div>
         </div>
         
-        <!--Change the UI to glass here-->
         <!-- Auth Panel -->
         <div id="auth-panel" class="mb-4 hidden">
-          <select id="auth-type" class="bg-gray-800 text-white p-2 rounded border border-gray-700 mb-3">
+          <select id="auth-type" class="bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700 mb-3">
             <option value="none">No Auth</option>
             <option value="basic">Basic Auth</option>
             <option value="bearer">Bearer Token</option>
@@ -3827,13 +4011,13 @@ loadProjects().then(() => {
           <div id="auth-none" class="text-gray-400">This request does not use any authorization.</div>
           
           <div id="auth-basic" class="hidden space-y-3">
-            <input type="text" id="auth-basic-username" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Username">
-            <input type="password" id="auth-basic-password" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Password">
+            <input type="text" id="auth-basic-username" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700" placeholder="Username">
+            <input type="password" id="auth-basic-password" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700" placeholder="Password">
           </div>
           
           <div id="auth-bearer" class="hidden">
             <div class="relative">
-              <input type="password" id="auth-bearer-token" class="w-full bg-gray-800 text-white p-2 pr-10 rounded border border-gray-700" placeholder="Token">
+              <input type="password" id="auth-bearer-token" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 pr-10 rounded border border-gray-700" placeholder="Token">
               <button type="button" id="toggle-bearer-token" class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
                 <svg id="bearer-eye-closed" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path>
@@ -3847,9 +4031,9 @@ loadProjects().then(() => {
           </div>
           
           <div id="auth-apikey" class="hidden space-y-3">
-            <input type="text" id="auth-apikey-key" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Key">
-            <input type="text" id="auth-apikey-value" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="Value">
-            <select id="auth-apikey-addto" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700">
+            <input type="text" id="auth-apikey-key" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700" placeholder="Key">
+            <input type="text" id="auth-apikey-value" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700" placeholder="Value">
+            <select id="auth-apikey-addto" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700">
               <option value="header">Add to Header</option>
               <option value="query">Add to Query Params</option>
             </select>
@@ -3859,7 +4043,7 @@ loadProjects().then(() => {
         <!-- Response Section -->
         <div class="p-4 flex flex-col min-h-0 max-w-[calc(100vw-3rem)]
                 overflow-hidden border border-gray-400 rounded-md
-                bg-[rgba(255,255,255,0.1)]
+                bg-[rgba(17,24,39,0.3)]
                 backdrop-blur-xs
                 shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]">
           <div class="flex items-center justify-between mb-3 mt-1">
@@ -3871,7 +4055,7 @@ loadProjects().then(() => {
               <span class="text-gray-400">Size:</span>
               <span id="response-size" class="text-gray-500">-</span>
             </div>
-            <select id="format-select" class="bg-gray-700 text-white p-2 rounded border border-gray-600 cursor-pointer">
+            <select id="format-select" class="bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-600 cursor-pointer">
               <option value="raw">Raw</option>
               <option value="json">JSON</option>
               <option value="html">HTML</option>
@@ -3879,7 +4063,7 @@ loadProjects().then(() => {
             </select>
           </div>
           
-          <div id="result" class="bg-[#282c34] rounded" style="overflow: auto; min-height: 0;"></div>
+          <div id="result" class="rounded" style="overflow: auto; min-height: 0;"></div>
         </div>
       </div>
     </div>
@@ -3910,9 +4094,35 @@ loadProjects().then(() => {
           <!--Change the UI to glass here-->
           <div class="flex gap-2">
             <!--Change the UI to glass here-->
-            <button id="import-project" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-sm">Import Project</button>
+            <button id="import-project" class="px-4 py-2 text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">Import Project</button>
             <!--Change the UI to glass here-->
-            <button id="create-project" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">Create Project</button>
+            <button id="create-project" class="px-4 py-2 text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">Create Project</button>
             <!--Change the UI to glass here-->
             <button id="close-project-modal" class="text-gray-400 hover:text-white text-2xl">&times;</button>
           </div>
@@ -3930,35 +4140,71 @@ loadProjects().then(() => {
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Project Name *</label>
             <!--Change the UI to glass here-->
-            <input type="text" id="project-name-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="My Project">
+            <input type="text" id="project-name-input" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700" placeholder="My Project">
           </div>
           
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Description</label>
             <!--Change the UI to glass here-->
-            <textarea id="project-desc-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" rows="3" placeholder="Project description"></textarea>
+            <textarea id="project-desc-input" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700" rows="3" placeholder="Project description"></textarea>
           </div>
           
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Base URL</label>
-            <!--Change the UI to glass here-->
-            <input type="text" id="project-baseurl-input" class="w-full bg-gray-800 text-white p-2 rounded border border-gray-700" placeholder="http://localhost:8080">
+            <input type="text" id="project-baseurl-input" class="w-full bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700" placeholder="http://localhost:8080">
             <p class="text-xs text-gray-400 mt-1">Use {{baseUrl}} in your requests to reference this URL</p>
           </div>
           
           <div class="mb-4">
             <label class="block text-sm font-semibold mb-2">Environment Variables</label>
             <div id="project-variables-container" class="mb-2"></div>
-            <!--Change the UI to glass here-->
-            <button id="add-project-variable" class="bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded text-sm">+ Add Variable</button>
-            <!--Change the UI to glass here-->
+            <button id="add-project-variable" class="px-4 py-2 text-sm overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">+ Add Variable</button>
             <p class="text-xs text-gray-400 mt-1">Use {{variableName}} in your requests. Mark sensitive data (tokens, passwords) with the lock icon.</p>
           </div>
         </div>
         
         <div class="flex gap-2 justify-end">
-          <button id="cancel-project-form" class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded">Cancel</button>
-          <button id="save-project-form" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">Save Project</button>
+          <button id="cancel-project-form" class="px-4 py-2 overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">Cancel</button>
+          <button id="save-project-form" class="px-4 py-2 overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer relative
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">Save Project</button>
         </div>
       </div>
     </div>

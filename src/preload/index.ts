@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { Request, HttpResponse, Collection, Environment, HistoryEntry, Project } from '../shared/types';
 
 contextBridge.exposeInMainWorld('electron', {
+
+  // Toggle menu, obviously
+  toggleMenu: () => ipcRenderer.send('toggle-menu'),
+
   // Request
   sendRequest: (request: Request): Promise<HttpResponse> => 
     ipcRenderer.invoke('request:send', request),
