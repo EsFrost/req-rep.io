@@ -110,6 +110,9 @@ export class RequestHandler {
     // Add timing and size info, and include response even on error
     command += ` -w "\\n__CURL_TIME__%{time_total}\\n__CURL_SIZE__%{size_download}\\n__CURL_HTTP_CODE__%{http_code}"`;
     
+    // Follow redirects
+    command += ` -L`;
+    
     // Show errors but don't fail
     command += ` --fail-with-body`;
     
@@ -177,32 +180,59 @@ export class RequestHandler {
         throw new Error('No response received from server');
       }
       
-      // Parse response
-      const parts = stdout.split('\n\n');
-      let headerSection = parts[0];
-      let bodyParts = parts.slice(1);
-      
-      // Handle multiple HTTP responses (redirects, etc.)
-      const statusLines = headerSection.split('\n').filter(line => line.startsWith('HTTP/'));
-      if (statusLines.length > 1) {
-        const lastStatusIndex = headerSection.lastIndexOf('HTTP/');
-        headerSection = headerSection.substring(lastStatusIndex);
-      }
-      
-      // Extract timing info
+      // Extract timing info FIRST
       const timeMatch = stdout.match(/__CURL_TIME__([0-9.]+)/);
       const sizeMatch = stdout.match(/__CURL_SIZE__([0-9]+)/);
       const httpCodeMatch = stdout.match(/__CURL_HTTP_CODE__([0-9]+)/);
       
-      // Remove curl metadata from body
-      let body = bodyParts.join('\n\n');
-      body = body.replace(/__CURL_TIME__[0-9.]+\n?/g, '');
-      body = body.replace(/__CURL_SIZE__[0-9]+\n?/g, '');
-      body = body.replace(/__CURL_HTTP_CODE__[0-9]+\n?/g, '');
-      body = body.trim();
+      // Remove curl metadata from output
+      stdout = stdout.replace(/__CURL_TIME__[0-9.]+\n?/g, '');
+      stdout = stdout.replace(/__CURL_SIZE__[0-9]+\n?/g, '');
+      stdout = stdout.replace(/__CURL_HTTP_CODE__[0-9]+\n?/g, '');
+      
+      // Find the last HTTP response (in case of redirects)
+      const httpResponsePattern = /HTTP\/[\d.]+ \d+/g;
+      const httpMatches = stdout.match(httpResponsePattern);
+      
+      let headerSection = '';
+      let body = '';
+      
+      if (httpMatches && httpMatches.length > 0) {
+        // Find the position of the last HTTP response
+        const lastHttpIndex = stdout.lastIndexOf(httpMatches[httpMatches.length - 1]);
+        
+        // Extract everything from the last HTTP response
+        const lastResponse = stdout.substring(lastHttpIndex);
+        
+        // Split headers and body by first occurrence of \r\n\r\n or \n\n
+        const doubleCrLfIndex = lastResponse.indexOf('\r\n\r\n');
+        const doubleNlIndex = lastResponse.indexOf('\n\n');
+        
+        let splitIndex = -1;
+        if (doubleCrLfIndex !== -1 && doubleNlIndex !== -1) {
+          splitIndex = Math.min(doubleCrLfIndex, doubleNlIndex);
+        } else if (doubleCrLfIndex !== -1) {
+          splitIndex = doubleCrLfIndex;
+        } else if (doubleNlIndex !== -1) {
+          splitIndex = doubleNlIndex;
+        }
+        
+        if (splitIndex !== -1) {
+          headerSection = lastResponse.substring(0, splitIndex);
+          body = lastResponse.substring(splitIndex).replace(/^[\r\n]+/, '').trim();
+        } else {
+          // No body separator found, everything is headers
+          headerSection = lastResponse;
+          body = '';
+        }
+      } else {
+        // No HTTP response found
+        headerSection = stdout;
+        body = '';
+      }
       
       // Parse status line
-      const statusLine = headerSection.split('\n')[0];
+      const statusLine = headerSection.split(/\r?\n/)[0];
       const statusMatch = statusLine.match(/HTTP\/[\d.]+ (\d+) (.+)/);
       
       // Use curl's http_code if available, otherwise parse from headers
@@ -223,7 +253,7 @@ export class RequestHandler {
         status: status || 0,
         statusText: statusText || 'No Response',
         headers,
-        body: body || 'No response body',
+        body: body || '',
         time,
         size,
         timestamp: Date.now()

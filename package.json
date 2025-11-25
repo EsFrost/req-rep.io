@@ -1,6 +1,6 @@
 {
   "name": "req-rep.io-electron",
-  "version": "0.1.10-a",
+  "version": "0.1.11-a",
   "description": "App to test API endpoints using curl and electron",
   "license": "ISC",
   "author": "Sigmund Frost",
