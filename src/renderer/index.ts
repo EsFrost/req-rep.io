@@ -166,6 +166,9 @@ const responseBodyPanel = document.getElementById('response-body-panel') as HTML
 const responseHeadersPanel = document.getElementById('response-headers-panel') as HTMLDivElement;
 const responseHeadersList = document.getElementById('response-headers-list') as HTMLDivElement;
 
+// Save response request button
+const saveResponseRequestBtn = document.getElementById('save-response-request') as HTMLButtonElement;
+
 // Network info modal function
 function displayNetworkInfo(networkInfo?: NetworkInfo): void {
   if (!networkInfo || Object.keys(networkInfo).length === 0) {
@@ -919,6 +922,28 @@ loadRequestBtn?.addEventListener('click', async () => {
     
   } catch (error) {
     console.error('Failed to load request:', error);
+  }
+});
+
+// Event listener for save response request button
+saveResponseRequestBtn?.addEventListener('click', async () => {
+  const tab = tabManager.getActiveTab();
+  if (!tab) return;
+  
+  const request = tab.request;
+  
+  try {
+    const url = new URL(request.url);
+    const urlPath = url.pathname.split('/').filter(p => p).join('_') || url.hostname.replace(/\./g, '_');
+    request.name = `${request.method}_${urlPath}`;
+  } catch {
+    request.name = `${request.method}_${Date.now()}`;
+  }
+  
+  try {
+    await window.electron.exportRequest(request);
+  } catch (error) {
+    console.error('Failed to export request:', error);
   }
 });
 

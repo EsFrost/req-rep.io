@@ -329,14 +329,32 @@
           </div>
           
           <!-- Response Tabs -->
-          <div class="flex border-b border-gray-700 mb-3">
-            <button id="response-body-tab" class="px-4 py-2 font-semibold border-b-2 border-white text-white">Body</button>
-            <button id="response-headers-tab" class="px-4 py-2 font-semibold border-b-2 border-transparent text-gray-400">Headers</button>
+          <div class="flex items-center justify-between border-b border-gray-700 mb-3">
+            <div class="flex">
+              <button id="response-body-tab" class="px-4 py-2 font-semibold border-b-2 border-white text-white">Body</button>
+              <button id="response-headers-tab" class="px-4 py-2 font-semibold border-b-2 border-transparent text-gray-400">Headers</button>
+            </div>
+            <button id="save-response-request" class="text-sm overflow-hidden border border-gray-400 rounded-md px-3 py-1 cursor-pointer
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10">
+              Save request
+            </button>
           </div>
           
           <!-- Body Panel -->
-          <div id="response-body-panel" class="flex-1 min-h-0">
-            <div id="result" class="rounded" style="overflow: auto; min-height: 0;"></div>
+          <div id="response-body-panel" class="flex-1 min-h-0 overflow-auto">
+            <div id="result" class="rounded"></div>
           </div>
           
           <!-- Headers Panel -->
