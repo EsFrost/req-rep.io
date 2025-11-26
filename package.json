@@ -31,32 +31,50 @@
     "highlight.js": "^11.9.0"
   },
   "build": {
-    "appId": "com.reqrep.io",
-    "productName": "Req-Rep.io",
-    "directories": {
-      "output": "release"
-    },
-    "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": [
-            "x64",
-            "ia32",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "build/icons/win/icon.ico"
-    },
-    "mac": {
-      "icon": "build/icons/mac/icon.icns",
-      "category": "public.app-category.developer-tools"
-    },
-    "linux": {
-      "icon": "build/icons/png/512x512.png",
-      "target": ["AppImage", "deb"],
-      "category": "Development"
+  "appId": "com.reqrep.io",
+  "productName": "Req-Rep.io",
+  "files": [
+    "dist/**/*",
+    "index.html",
+    "styles.css",
+    "node_modules/**/*",
+    "build/icons/**/*",
+    "build/icon.png"
+  ],
+  "extraResources": [
+    {
+      "from": "build/icons",
+      "to": "build/icons",
+      "filter": ["**/*"]
     }
+  ],
+  "asarUnpack": [
+    "build/icons/**/*"
+  ],
+  "directories": {
+    "output": "release"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "portable",
+        "arch": [
+          "x64",
+          "ia32",
+          "arm64"
+        ]
+      }
+    ],
+    "icon": "build/icons/win/icon.ico"
+  },
+  "mac": {
+    "icon": "build/icons/mac/icon.icns",
+    "category": "public.app-category.developer-tools"
+  },
+  "linux": {
+    "icon": "build/icons/png/512x512.png",
+    "target": ["AppImage", "deb"],
+    "category": "Development"
   }
+}
 }
