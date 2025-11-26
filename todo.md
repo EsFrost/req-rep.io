@@ -33,3 +33,7 @@
 ## Problems :
 
 - Remove all console logs on code cleanup
+
+## Test :
+
+- Perform tests for each type of request
