@@ -128,6 +128,61 @@ export class RequestHandler {
     return value.replace(/'/g, "'\\''");
   }
   
+  private getStatusText(code: number): string {
+    const statusTexts: Record<number, string> = {
+      100: 'Continue',
+      101: 'Switching Protocols',
+      200: 'OK',
+      201: 'Created',
+      202: 'Accepted',
+      203: 'Non-Authoritative Information',
+      204: 'No Content',
+      205: 'Reset Content',
+      206: 'Partial Content',
+      300: 'Multiple Choices',
+      301: 'Moved Permanently',
+      302: 'Found',
+      303: 'See Other',
+      304: 'Not Modified',
+      307: 'Temporary Redirect',
+      308: 'Permanent Redirect',
+      400: 'Bad Request',
+      401: 'Unauthorized',
+      402: 'Payment Required',
+      403: 'Forbidden',
+      404: 'Not Found',
+      405: 'Method Not Allowed',
+      406: 'Not Acceptable',
+      407: 'Proxy Authentication Required',
+      408: 'Request Timeout',
+      409: 'Conflict',
+      410: 'Gone',
+      411: 'Length Required',
+      412: 'Precondition Failed',
+      413: 'Payload Too Large',
+      414: 'URI Too Long',
+      415: 'Unsupported Media Type',
+      416: 'Range Not Satisfiable',
+      417: 'Expectation Failed',
+      418: "I'm a teapot",
+      422: 'Unprocessable Entity',
+      425: 'Too Early',
+      426: 'Upgrade Required',
+      428: 'Precondition Required',
+      429: 'Too Many Requests',
+      431: 'Request Header Fields Too Large',
+      451: 'Unavailable For Legal Reasons',
+      500: 'Internal Server Error',
+      501: 'Not Implemented',
+      502: 'Bad Gateway',
+      503: 'Service Unavailable',
+      504: 'Gateway Timeout',
+      505: 'HTTP Version Not Supported',
+      511: 'Network Authentication Required'
+    };
+    return statusTexts[code] || 'Unknown';
+  }
+  
   private parseHeaders(headerText: string): Record<string, string> {
     const headers: Record<string, string> = {};
     const lines = headerText.split('\n');
@@ -420,9 +475,12 @@ export class RequestHandler {
               headers[key] = res.headers[key];
             });
             
+            const statusCode = res.statusCode || 0;
+            const statusText = res.statusMessage || this.getStatusText(statusCode);
+            
             resolve({
-              status: res.statusCode || 0,
-              statusText: res.statusMessage || 'Unknown',
+              status: statusCode,
+              statusText: statusText,
               headers,
               body,
               time,
@@ -451,19 +509,16 @@ export class RequestHandler {
   async execute(request: Request): Promise<HttpResponse> {
     const startTime = Date.now();
     
-    // For HTTPS requests, use Node.js native client to get full TLS details
+    // For all requests, use Node.js native client for better body parsing
     try {
       const url = new URL(request.url);
-      if (url.protocol === 'https:') {
-        console.log('Using Node.js HTTPS client for TLS details');
-        return await this.executeWithNodeHttps(request);
-      }
+      console.log('Using Node.js HTTP client');
+      return await this.executeWithNodeHttps(request);
     } catch (urlError) {
-      // If URL parsing fails, fall through to curl
       console.log('URL parsing failed, using curl');
     }
     
-    // Fall back to curl for HTTP or if Node.js method fails
+    // Fall back to curl only if URL parsing fails
     try {
       const command = this.buildCurlCommand(request);
       console.log('Executing command:', command);
@@ -500,52 +555,64 @@ export class RequestHandler {
       
       const networkInfo = this.parseNetworkInfo(stderr, stdout);
       
-      const parts = stdout.split('\n\n');
-      let headerSection = parts[0];
-      let bodyParts = parts.slice(1);
+      // Remove curl metadata first
+      let cleanedOutput = stdout;
+      cleanedOutput = cleanedOutput.replace(/__CURL_TIME__[0-9.]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_SIZE__[0-9]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_HTTP_CODE__[0-9]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_HTTP_VERSION__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_LOCAL_IP__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_LOCAL_PORT__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_REMOTE_IP__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_REMOTE_PORT__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_SSL_VERSION__[^\n]+\n?/g, '');
       
-      const statusLines = headerSection.split('\n').filter(line => line.startsWith('HTTP/'));
-      if (statusLines.length > 1) {
-        const lastStatusIndex = headerSection.lastIndexOf('HTTP/');
-        headerSection = headerSection.substring(lastStatusIndex);
+      // Find the last HTTP status line (in case of redirects)
+      const lines = cleanedOutput.split('\n');
+      let lastStatusIndex = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('HTTP/')) {
+          lastStatusIndex = i;
+        }
       }
       
-      const timeMatch = stdout.match(/__CURL_TIME__([0-9.]+)/);
-      const sizeMatch = stdout.match(/__CURL_SIZE__([0-9]+)/);
-      const httpCodeMatch = stdout.match(/__CURL_HTTP_CODE__([0-9]+)/);
+      if (lastStatusIndex === -1) {
+        throw new Error('No HTTP status line found in response');
+      }
       
-      let body = bodyParts.join('\n\n');
-      body = body.replace(/__CURL_TIME__[0-9.]+\n?/g, '');
-      body = body.replace(/__CURL_SIZE__[0-9]+\n?/g, '');
-      body = body.replace(/__CURL_HTTP_CODE__[0-9]+\n?/g, '');
-      body = body.replace(/__CURL_HTTP_VERSION__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_LOCAL_IP__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_LOCAL_PORT__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_REMOTE_IP__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_REMOTE_PORT__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_SSL_VERSION__[^\n]+\n?/g, '');
-      body = body.trim();
+      // Find where headers end (first empty line after status)
+      let headerEndIndex = lastStatusIndex + 1;
+      while (headerEndIndex < lines.length && lines[headerEndIndex].trim() !== '') {
+        headerEndIndex++;
+      }
       
-      const statusLine = headerSection.split('\n')[0];
+      // Extract status line
+      const statusLine = lines[lastStatusIndex];
       const statusMatch = statusLine.match(/HTTP\/[\d.]+ (\d+) (.+)/);
       
-      let status = httpCodeMatch ? parseInt(httpCodeMatch[1]) : 0;
-      if (!status && statusMatch) {
-        status = parseInt(statusMatch[1]);
-      }
+      const status = statusMatch ? parseInt(statusMatch[1]) : 0;
+      const statusText = statusMatch ? statusMatch[2].trim() : this.getStatusText(status);
       
-      const statusText = statusMatch ? statusMatch[2].trim() : 'Unknown';
-      
+      // Extract headers
+      const headerLines = lines.slice(lastStatusIndex + 1, headerEndIndex);
+      const headerSection = headerLines.join('\n');
       const headers = this.parseHeaders(headerSection);
+      
+      // Extract body (everything after the empty line)
+      const body = lines.slice(headerEndIndex + 1).join('\n').trim();
+      
+      // Get timing info from original stdout
+      const timeMatch = stdout.match(/__CURL_TIME__([0-9.]+)/);
+      const sizeMatch = stdout.match(/__CURL_SIZE__([0-9]+)/);
       
       const time = timeMatch ? parseFloat(timeMatch[1]) * 1000 : Date.now() - startTime;
       const size = sizeMatch ? parseInt(sizeMatch[1]) : body.length;
       
       return {
         status: status || 0,
-        statusText: statusText || 'No Response',
+        statusText: statusText,
         headers,
-        body: body || 'No response body',
+        body: body || '',
         time,
         size,
         timestamp: Date.now(),
