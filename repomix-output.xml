@@ -3277,10 +3277,6 @@ export interface IpcChannels {
 ## Problems :
 
 - Remove all console logs on code cleanup
-
-## Test :
-
-- Perform tests for each type of request
 </file>
 
 <file path="src/renderer/index.ts">
@@ -4288,24 +4284,53 @@ loadRequestBtn?.addEventListener('click', async () => {
 
 // Event listener for save response request button
 saveResponseRequestBtn?.addEventListener('click', async () => {
-  const tab = tabManager.getActiveTab();
-  if (!tab) return;
+  if (!lastResponse) {
+    alert('No response to save. Please send a request first.');
+    return;
+  }
   
-  const request = tab.request;
+  // Try to parse as JSON, if it fails save as text
+  let contentType = 'application/json';
+  let fileExtension = 'json';
+  let content = lastResponse.body;
   
   try {
-    const url = new URL(request.url);
-    const urlPath = url.pathname.split('/').filter(p => p).join('_') || url.hostname.replace(/\./g, '_');
-    request.name = `${request.method}_${urlPath}`;
+    // Try to parse and pretty-print JSON
+    const parsed = JSON.parse(lastResponse.body);
+    content = JSON.stringify(parsed, null, 2);
   } catch {
-    request.name = `${request.method}_${Date.now()}`;
+    // If not valid JSON, save as text
+    contentType = 'text/plain';
+    fileExtension = 'txt';
   }
   
-  try {
-    await window.electron.exportRequest(request);
-  } catch (error) {
-    console.error('Failed to export request:', error);
+  // Create a Blob from the response body
+  const blob = new Blob([content], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  
+  // Create a temporary download link
+  const a = document.createElement('a');
+  a.href = url;
+  
+  // Generate filename based on URL and timestamp
+  const tab = tabManager.getActiveTab();
+  let filename = `response.${fileExtension}`;
+  
+  if (tab?.request.url) {
+    try {
+      const urlObj = new URL(tab.request.url);
+      const path = urlObj.pathname.split('/').filter(p => p).pop() || urlObj.hostname.replace(/\./g, '_');
+      filename = `response_${path}_${Date.now()}.${fileExtension}`;
+    } catch {
+      filename = `response_${Date.now()}.${fileExtension}`;
+    }
   }
+  
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 });
 
 viewHistoryBtn?.addEventListener('click', async () => {
@@ -4926,7 +4951,7 @@ loadProjects().then(() => {
                 hover:before:left-[150%]
                 active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
                 active:duration-10">
-              Save request
+              Save response
             </button>
           </div>
           

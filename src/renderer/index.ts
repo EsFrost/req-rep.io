@@ -323,9 +323,15 @@ function debouncedSaveCurrentTab(): void {
   }
   
   saveDebounceTimer = window.setTimeout(() => {
-    saveCurrentTab();
-    markUnsavedChanges();
-    autoSaveProject();
+    // Check if we're currently in a modal or form that shouldn't trigger saves
+    const activeElement = document.activeElement as HTMLElement;
+    const isInModal = activeElement?.closest('#project-form-modal, #folder-modal, #history-modal, #project-modal');
+    
+    if (!isInModal) {
+      saveCurrentTab();
+      markUnsavedChanges();
+      autoSaveProject();
+    }
     saveDebounceTimer = null;
   }, 500);
 }
@@ -333,6 +339,12 @@ function debouncedSaveCurrentTab(): void {
 function saveCurrentTab(): void {
   const tab = tabManager.getActiveTab();
   if (!tab) return;
+  
+  // Safety check: don't save if we're in a modal
+  const activeElement = document.activeElement as HTMLElement;
+  if (activeElement?.closest('#project-form-modal, #folder-modal, #history-modal, #project-modal')) {
+    return;
+  }
   
   const originalRequest = tab.request;
   
