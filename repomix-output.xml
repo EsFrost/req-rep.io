@@ -46,6 +46,7 @@ LICENSE
 package.json
 readme.md
 RR_temp.png
+RR_temp.psd
 src/main/index.ts
 src/main/ipc/handlers.ts
 src/main/ipc/request-handler.ts
@@ -548,122 +549,6 @@ export function addRequestToProject(
 }
 </file>
 
-<file path="src/renderer/helpers/request-builder.ts">
-import { Request, HttpMethod, KeyValue, BodyType, AuthType } from '../../shared/types';
-
-export const methodColors: Record<HttpMethod, string> = {
-  'GET': 'text-green-600',
-  'POST': 'text-yellow-600',
-  'PUT': 'text-blue-600',
-  'PATCH': 'text-pink-600',
-  'DELETE': 'text-red-600',
-  'HEAD': 'text-green-400',
-  'OPTIONS': 'text-purple-600'
-};
-
-export function isHttpMethod(method: string): method is HttpMethod {
-  return ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method);
-}
-
-export function buildRequest(
-  currentMethod: HttpMethod,
-  urlInput: HTMLInputElement,
-  paramsContainer: HTMLDivElement,
-  headersContainer: HTMLDivElement,
-  bodyTypeSelect: HTMLSelectElement,
-  bodyRawTextarea: HTMLTextAreaElement,
-  bodyJsonTextarea: HTMLTextAreaElement,
-  bodyFormDataContainer: HTMLDivElement,
-  authTypeSelect: HTMLSelectElement,
-  projectId?: string
-): Request {
-  // Get query params from inputs
-  const paramRows = paramsContainer.querySelectorAll('.flex');
-  const currentParams: KeyValue[] = [];
-  paramRows.forEach(row => {
-    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
-    currentParams.push({
-      key: inputs[0].value,
-      value: inputs[1].value,
-      enabled: checkbox.checked
-    });
-  });
-  
-  // Get headers from inputs
-  const headerRows = headersContainer.querySelectorAll('.flex');
-  const currentHeaders: KeyValue[] = [];
-  headerRows.forEach(row => {
-    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
-    currentHeaders.push({
-      key: inputs[0].value,
-      value: inputs[1].value,
-      enabled: checkbox.checked
-    });
-  });
-  
-  // Build body
-  const bodyType = bodyTypeSelect.value as BodyType;
-  let body: Request['body'];
-  
-  if (bodyType === 'none') {
-    body = undefined;
-  } else if (bodyType === 'raw' || bodyType === 'x-www-form-urlencoded') {
-    body = { type: bodyType, raw: bodyRawTextarea.value };
-  } else if (bodyType === 'json') {
-    body = { type: bodyType, json: bodyJsonTextarea.value };
-  } else if (bodyType === 'form-data') {
-    const formRows = bodyFormDataContainer.querySelectorAll('.flex');
-    const formData: KeyValue[] = [];
-    formRows.forEach(row => {
-      const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
-      const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
-      formData.push({
-        key: inputs[0].value,
-        value: inputs[1].value,
-        enabled: checkbox.checked
-      });
-    });
-    body = { type: bodyType, formData };
-  }
-  
-  // Build auth
-  const authType = authTypeSelect.value as AuthType;
-  let auth: Request['auth'];
-  
-  if (authType === 'none') {
-    auth = undefined;
-  } else if (authType === 'basic') {
-    const username = (document.getElementById('auth-basic-username') as HTMLInputElement).value;
-    const password = (document.getElementById('auth-basic-password') as HTMLInputElement).value;
-    auth = { type: authType, basic: { username, password } };
-  } else if (authType === 'bearer') {
-    const token = (document.getElementById('auth-bearer-token') as HTMLInputElement).value;
-    auth = { type: authType, bearer: { token } };
-  } else if (authType === 'api-key') {
-    const key = (document.getElementById('auth-apikey-key') as HTMLInputElement).value;
-    const value = (document.getElementById('auth-apikey-value') as HTMLInputElement).value;
-    const addTo = (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value as 'header' | 'query';
-    auth = { type: authType, apiKey: { key, value, addTo } };
-  }
-  
-  return {
-    id: Date.now().toString(),
-    name: 'Untitled Request',
-    method: currentMethod,
-    url: urlInput.value,
-    headers: currentHeaders,
-    body,
-    auth,
-    queryParams: currentParams,
-    projectId,
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-}
-</file>
-
 <file path="src/renderer/helpers/variable-replacer.ts">
 import { Project } from '../../shared/types';
 
@@ -1103,6 +988,134 @@ export function renderProjectList(
     
     container.appendChild(projectCard);
   });
+}
+</file>
+
+<file path="src/renderer/helpers/request-builder.ts">
+import { Request, HttpMethod, KeyValue, BodyType, AuthType } from '../../shared/types';
+
+export const methodColors: Record<HttpMethod, string> = {
+  'GET': 'text-green-600',
+  'POST': 'text-yellow-600',
+  'PUT': 'text-blue-600',
+  'PATCH': 'text-pink-600',
+  'DELETE': 'text-red-600',
+  'HEAD': 'text-green-400',
+  'OPTIONS': 'text-purple-600'
+};
+
+export function isHttpMethod(method: string): method is HttpMethod {
+  return ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'].includes(method);
+}
+
+export function buildRequest(
+  currentMethod: HttpMethod,
+  urlInput: HTMLInputElement,
+  paramsContainer: HTMLDivElement,
+  headersContainer: HTMLDivElement,
+  bodyTypeSelect: HTMLSelectElement,
+  bodyRawTextarea: HTMLTextAreaElement,
+  bodyJsonTextarea: HTMLTextAreaElement,
+  bodyFormDataContainer: HTMLDivElement,
+  authTypeSelect: HTMLSelectElement,
+  projectId?: string
+): Request {
+  // Get query params from inputs
+  const paramRows = paramsContainer.querySelectorAll('.flex');
+  const currentParams: KeyValue[] = [];
+  paramRows.forEach(row => {
+    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const keyInput = row.querySelector('[data-key-input]') as HTMLInputElement;
+    const valueInput = row.querySelector('[data-value-input]') as HTMLInputElement;
+    
+    if (checkbox && keyInput && valueInput) {
+      currentParams.push({
+        key: keyInput.value,
+        value: valueInput.value,
+        enabled: checkbox.checked
+      });
+    }
+  });
+  
+  // Get headers from inputs
+  const headerRows = headersContainer.querySelectorAll('.flex');
+  const currentHeaders: KeyValue[] = [];
+  headerRows.forEach(row => {
+    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const keyInput = row.querySelector('[data-key-input]') as HTMLInputElement;
+    const valueInput = row.querySelector('[data-value-input]') as HTMLInputElement;
+    
+    if (checkbox && keyInput && valueInput) {
+      currentHeaders.push({
+        key: keyInput.value,
+        value: valueInput.value,
+        enabled: checkbox.checked
+      });
+    }
+  });
+  
+  // Build body
+  const bodyType = bodyTypeSelect.value as BodyType;
+  let body: Request['body'];
+  
+  if (bodyType === 'none') {
+    body = undefined;
+  } else if (bodyType === 'raw' || bodyType === 'x-www-form-urlencoded') {
+    body = { type: bodyType, raw: bodyRawTextarea.value };
+  } else if (bodyType === 'json') {
+    body = { type: bodyType, json: bodyJsonTextarea.value };
+  } else if (bodyType === 'form-data') {
+    const formRows = bodyFormDataContainer.querySelectorAll('.flex');
+    const formData: KeyValue[] = [];
+    formRows.forEach(row => {
+      const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      const keyInput = row.querySelector('[data-key-input]') as HTMLInputElement;
+      const valueInput = row.querySelector('[data-value-input]') as HTMLInputElement;
+      
+      if (checkbox && keyInput && valueInput) {
+        formData.push({
+          key: keyInput.value,
+          value: valueInput.value,
+          enabled: checkbox.checked
+        });
+      }
+    });
+    body = { type: bodyType, formData };
+  }
+  
+  // Build auth
+  const authType = authTypeSelect.value as AuthType;
+  let auth: Request['auth'];
+  
+  if (authType === 'none') {
+    auth = undefined;
+  } else if (authType === 'basic') {
+    const username = (document.getElementById('auth-basic-username') as HTMLInputElement).value;
+    const password = (document.getElementById('auth-basic-password') as HTMLInputElement).value;
+    auth = { type: authType, basic: { username, password } };
+  } else if (authType === 'bearer') {
+    const token = (document.getElementById('auth-bearer-token') as HTMLInputElement).value;
+    auth = { type: authType, bearer: { token } };
+  } else if (authType === 'api-key') {
+    const key = (document.getElementById('auth-apikey-key') as HTMLInputElement).value;
+    const value = (document.getElementById('auth-apikey-value') as HTMLInputElement).value;
+    const addTo = (document.getElementById('auth-apikey-addto') as HTMLSelectElement).value as 'header' | 'query';
+    auth = { type: authType, apiKey: { key, value, addTo } };
+  }
+  
+  return {
+    id: Date.now().toString(),
+    name: 'Untitled Request',
+    method: currentMethod,
+    url: urlInput.value,
+    headers: currentHeaders,
+    body,
+    auth,
+    queryParams: currentParams,
+    projectId,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  };
 }
 </file>
 
@@ -1579,25 +1592,51 @@ styles.css
 dist
 </file>
 
+<file path="readme.md">
+# Req-Rep.io
+
+## Req-Rep.io is a simple HTTP client for Windows, Linux and macOS.
+
+It was created using the Electron framework which I have worked with before and I find using it faster, easier and more enjoyable to develop with.
+
+## Why Req-Rep.io ?
+
+This is an open source project, feel free to fork, download, modify etc. You have absolute control over what is happening. It can be used as a base for a much more complex and complete project.
+
+### Why not Postman ?
+
+Req-Rep.io does not use any sort of accounts, does not collect any sort of data and is completely free, while maintaining similar functionality to Postman. If there are any features missing you can either add them yourself or suggest the change and I will try to implement it.
+
+### Why not curl ?
+
+In case you want an intuitive app with GUI since curl is a command line tool and you might not want to remember all the flags and options. On the other hand, as mentioned before, if any command or flag is missing, you can always add it yourself or request for it to be added.
+
+*I hope you find this project useful, intuitive, easy to use, easy to modify and instructive.*
+
+---
+
+If the final project's size is too large, please download the source code and build it yourself.
+
+Any and all suggestions are welcome.
+</file>
+
 <file path="src/main/window.ts">
 import { BrowserWindow, Menu, ipcMain, app } from 'electron';
 import path from 'path';
 
 export const createWindow = (): BrowserWindow => {
-  // Use the correct icon path that matches your actual file structure
   let iconPath: string;
   
   if (app.isPackaged) {
-    // In production, use the icon from resources
+    
     if (process.platform === 'win32') {
-      iconPath = path.join(process.resourcesPath, 'build', 'icons', 'win', 'icon.ico');
+      iconPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'build', 'icons', 'win', 'icon.ico');
     } else if (process.platform === 'darwin') {
       iconPath = path.join(process.resourcesPath, 'build', 'icons', 'mac', 'icon.icns');
     } else {
       iconPath = path.join(process.resourcesPath, 'build', 'icons', 'png', '512x512.png');
     }
   } else {
-    // In development, use the icon from the build folder
     if (process.platform === 'win32') {
       iconPath = path.join(__dirname, '../../build/icons/win/icon.ico');
     } else if (process.platform === 'darwin') {
@@ -1631,722 +1670,6 @@ export const createWindow = (): BrowserWindow => {
   
   return win;
 };
-</file>
-
-<file path="src/renderer/helpers/key-value-renderer.ts">
-import { KeyValue } from '../../shared/types';
-
-export function createKeyValueRow(
-  key: string = '',
-  value: string = '',
-  enabled: boolean = true,
-  onDelete: () => void,
-  onChange?: () => void,
-  sensitive: boolean = false,
-  showSensitiveToggle: boolean = false
-): HTMLDivElement {
-  const row = document.createElement('div');
-  row.className = 'flex gap-2 items-center mb-2';
-  
-  const checkbox = document.createElement('input');
-  checkbox.type = 'checkbox';
-  checkbox.checked = enabled;
-  checkbox.className = 'w-5 h-5 rounded border border-gray-700 accent-[rgb(7,14,29)] cursor-pointer bg-[rgba(7,14,29,1.0)]';
-  if (onChange) {
-    checkbox.addEventListener('change', onChange);
-  }
-  
-  const keyInput = document.createElement('input');
-  keyInput.type = 'text';
-  keyInput.value = key;
-  keyInput.placeholder = 'Key';
-  keyInput.className = 'flex-1 bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700';
-  if (onChange) {
-    keyInput.addEventListener('input', onChange);
-  }
-  
-  const valueInput = document.createElement('input');
-  valueInput.type = sensitive ? 'password' : 'text';
-  valueInput.value = value;
-  valueInput.placeholder = 'Value';
-  valueInput.className = 'flex-1 bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700';
-  if (onChange) {
-    valueInput.addEventListener('input', onChange);
-  }
-  
-  // Add sensitive toggle if needed
-  if (showSensitiveToggle) {
-    const sensitiveBtn = document.createElement('button');
-    sensitiveBtn.type = 'button';
-    sensitiveBtn.className = sensitive 
-      ? 'bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-xl'
-      : 'bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-xl';
-    sensitiveBtn.innerHTML = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#ffffff"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M12 14.5V16.5M7 10.0288C7.47142 10 8.05259 10 8.8 10H15.2C15.9474 10 16.5286 10 17 10.0288M7 10.0288C6.41168 10.0647 5.99429 10.1455 5.63803 10.327C5.07354 10.6146 4.6146 11.0735 4.32698 11.638C4 12.2798 4 13.1198 4 14.8V16.2C4 17.8802 4 18.7202 4.32698 19.362C4.6146 19.9265 5.07354 20.3854 5.63803 20.673C6.27976 21 7.11984 21 8.8 21H15.2C16.8802 21 17.7202 21 18.362 20.673C18.9265 20.3854 19.3854 19.9265 19.673 19.362C20 18.7202 20 17.8802 20 16.2V14.8C20 13.1198 20 12.2798 19.673 11.638C19.3854 11.0735 18.9265 10.6146 18.362 10.327C18.0057 10.1455 17.5883 10.0647 17 10.0288M7 10.0288V8C7 5.23858 9.23858 3 12 3C14.7614 3 17 5.23858 17 8V10.0288" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path> </g></svg>`;
-    sensitiveBtn.title = 'Mark as sensitive (encrypted storage)';
-    sensitiveBtn.onclick = () => {
-      const newSensitive = !sensitive;
-      sensitiveBtn.className = newSensitive
-        ? 'bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-xl'
-        : 'bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded text-xl';
-      valueInput.type = newSensitive ? 'password' : 'text';
-      if (onChange) onChange();
-    };
-    row.appendChild(sensitiveBtn);
-  }
-  
-  const deleteBtn = document.createElement('button');
-  deleteBtn.textContent = '×';
-  deleteBtn.className = "px-3 py-2text-xl font-bold overflow-hidden border border-gray-400 rounded-md px-4 py-2 text-lg cursor-pointer bg-[rgba(17,24,39,0.3)] backdrop-blur-xs shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)] transition-all duration-500 ease-in-out hover:backdrop-blur-md hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)] before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent before:skew-x-[-25deg] before:transition-all before:duration-500 before:ease-in-out hover:before:left-[150%] active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)] active:duration-10";
-  deleteBtn.onclick = onDelete;
-  
-  row.appendChild(checkbox);
-  row.appendChild(keyInput);
-  row.appendChild(valueInput);
-  row.appendChild(deleteBtn);
-  
-  return row;
-}
-
-export function syncArrayFromDOM(container: HTMLDivElement, items: KeyValue[]): void {
-  const rows = container.querySelectorAll('.flex');
-  rows.forEach((row, index) => {
-    if (index < items.length) {
-      const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
-      const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
-      items[index].enabled = checkbox.checked;
-      items[index].key = inputs[0].value;
-      items[index].value = inputs[1].value;
-    }
-  });
-}
-
-export function renderKeyValueList(
-  container: HTMLDivElement,
-  items: KeyValue[],
-  onUpdate: () => void
-): void {
-  // First, sync the current DOM values back to the array
-  syncArrayFromDOM(container, items);
-  
-  container.innerHTML = '';
-  items.forEach((item, index) => {
-    const row = createKeyValueRow(item.key, item.value, item.enabled, () => {
-      items.splice(index, 1);
-      renderKeyValueList(container, items, onUpdate);
-      onUpdate();
-    }, onUpdate);
-    container.appendChild(row);
-  });
-}
-
-export function addKeyValue(
-  items: KeyValue[],
-  container: HTMLDivElement,
-  onUpdate: () => void
-): void {
-  // Sync current values before adding new
-  syncArrayFromDOM(container, items);
-  
-  items.push({ key: '', value: '', enabled: true });
-  renderKeyValueList(container, items, onUpdate);
-}
-</file>
-
-<file path="readme.md">
-# Req-Rep.io
-
-## Req-Rep.io is a simple HTTP client for Windows, Linux and macOS.
-
-It was created using the Electron framework which I have worked with before and I find using it faster, easier and more enjoyable to develop with.
-
-## Why Req-Rep.io ?
-
-This is an open source project, feel free to fork, download, modify etc. You have absolute control over what is happening. It can be used as a base for a much more complex and complete project.
-
-### Why not Postman ?
-
-Req-Rep.io does not use any sort of accounts, does not collect any sort of data and is completely free, while maintaining similar functionality to Postman. If there are any features missing you can either add them yourself or suggest the change and I will try to implement it.
-
-### Why not curl ?
-
-In case you want an intuitive app with GUI since curl is a command line tool and you might not want to remember all the flags and options. On the other hand, as mentioned before, if any command or flag is missing, you can always add it yourself or request for it to be added.
-
-*I hope you find this project useful, intuitive, easy to use, easy to modify and instructive.*
-
----
-
-If the final project's size is too large, please download the source code and build it yourself.
-
-Any and all suggestions are welcome.
-</file>
-
-<file path="src/main/ipc/request-handler.ts">
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import * as https from 'https';
-import * as http from 'http';
-import { URL } from 'url';
-import { Request, HttpResponse, KeyValue, NetworkInfo } from '../../shared/types';
-
-const execAsync = promisify(exec);
-
-export class RequestHandler {
-  private buildCurlCommand(request: Request): string {
-    let command = 'curl -i -s';
-    
-    // Add method
-    if (request.method !== 'GET') {
-      command += ` -X ${request.method}`;
-    }
-    
-    // Add headers
-    if (request.headers && request.headers.length > 0) {
-      request.headers
-        .filter(h => h.enabled && h.key && h.value)
-        .forEach(header => {
-          command += ` -H "${header.key}: ${this.escapeValue(header.value)}"`;
-        });
-    }
-    
-    // Add auth
-    if (request.auth && request.auth.type !== 'none') {
-      switch (request.auth.type) {
-        case 'basic':
-          if (request.auth.basic && request.auth.basic.username && request.auth.basic.password) {
-            command += ` -u "${this.escapeValue(request.auth.basic.username)}:${this.escapeValue(request.auth.basic.password)}"`;
-          }
-          break;
-        case 'bearer':
-          if (request.auth.bearer && request.auth.bearer.token) {
-            command += ` -H "Authorization: Bearer ${this.escapeValue(request.auth.bearer.token)}"`;
-          }
-          break;
-        case 'api-key':
-          if (request.auth.apiKey && request.auth.apiKey.key && request.auth.apiKey.value) {
-            if (request.auth.apiKey.addTo === 'header') {
-              command += ` -H "${this.escapeValue(request.auth.apiKey.key)}: ${this.escapeValue(request.auth.apiKey.value)}"`;
-            }
-          }
-          break;
-      }
-    }
-    
-    // Build URL with query params
-    let url = request.url;
-    const enabledParams = request.queryParams?.filter(p => p.enabled && p.key) || [];
-    if (enabledParams.length > 0) {
-      const queryString = enabledParams
-        .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
-        .join('&');
-      url += (url.includes('?') ? '&' : '?') + queryString;
-    }
-    
-    // Add API key to query if needed
-    if (request.auth?.type === 'api-key' && 
-        request.auth.apiKey?.addTo === 'query' && 
-        request.auth.apiKey.key && 
-        request.auth.apiKey.value) {
-      const separator = url.includes('?') ? '&' : '?';
-      url += `${separator}${encodeURIComponent(request.auth.apiKey.key)}=${encodeURIComponent(request.auth.apiKey.value)}`;
-    }
-    
-    // Add body
-    if (request.body && request.body.type !== 'none') {
-      switch (request.body.type) {
-        case 'json':
-          if (request.body.json) {
-            const jsonStr = typeof request.body.json === 'string' 
-              ? request.body.json 
-              : JSON.stringify(request.body.json);
-            if (jsonStr.trim()) {
-              command += ` -H "Content-Type: application/json"`;
-              command += ` -d '${this.escapeValue(jsonStr)}'`;
-            }
-          }
-          break;
-        case 'raw':
-          if (request.body.raw && request.body.raw.trim()) {
-            command += ` -d '${this.escapeValue(request.body.raw)}'`;
-          }
-          break;
-        case 'x-www-form-urlencoded':
-          if (request.body.formData && request.body.formData.length > 0) {
-            command += ` -H "Content-Type: application/x-www-form-urlencoded"`;
-            const formStr = request.body.formData
-              .filter(f => f.enabled && f.key)
-              .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value || '')}`)
-              .join('&');
-            if (formStr) {
-              command += ` -d '${formStr}'`;
-            }
-          }
-          break;
-        case 'form-data':
-          if (request.body.formData && request.body.formData.length > 0) {
-            request.body.formData
-              .filter(f => f.enabled && f.key)
-              .forEach(field => {
-                command += ` -F "${this.escapeValue(field.key)}=${this.escapeValue(field.value || '')}"`;
-              });
-          }
-          break;
-      }
-    }
-    
-    // Add timing, size info, and connection details
-    command += ` -w "\\n__CURL_TIME__%{time_total}\\n__CURL_SIZE__%{size_download}\\n__CURL_HTTP_CODE__%{http_code}\\n__CURL_HTTP_VERSION__%{http_version}\\n__CURL_LOCAL_IP__%{local_ip}\\n__CURL_LOCAL_PORT__%{local_port}\\n__CURL_REMOTE_IP__%{remote_ip}\\n__CURL_REMOTE_PORT__%{remote_port}\\n__CURL_SSL_VERSION__%{ssl_version}"`;
-    
-    // Show errors but don't fail
-    command += ` --fail-with-body`;
-    
-    // Add verbose flag to capture SSL/TLS info
-    command += ` -v`;
-    
-    command += ` "${url}"`;
-    
-    return command;
-  }
-  
-  private escapeValue(value: string): string {
-    return value.replace(/'/g, "'\\''");
-  }
-  
-  private parseHeaders(headerText: string): Record<string, string> {
-    const headers: Record<string, string> = {};
-    const lines = headerText.split('\n');
-    
-    for (const line of lines) {
-      const match = line.match(/^([^:]+):\s*(.+)$/);
-      if (match) {
-        headers[match[1].toLowerCase()] = match[2].trim();
-      }
-    }
-    
-    return headers;
-  }
-  
-  private parseNetworkInfo(stderr: string, stdout: string): NetworkInfo {
-    const networkInfo: NetworkInfo = {};
-    
-    // Extract HTTP version from curl write-out
-    const httpVersionMatch = stdout.match(/__CURL_HTTP_VERSION__([^\n]+)/);
-    if (httpVersionMatch) {
-      const version = httpVersionMatch[1].trim();
-      if (version === '2') {
-        networkInfo.httpVersion = 'HTTP/2';
-      } else if (version === '1.1') {
-        networkInfo.httpVersion = 'HTTP/1.1';
-      } else if (version === '1.0') {
-        networkInfo.httpVersion = 'HTTP/1.0';
-      } else if (version === '3') {
-        networkInfo.httpVersion = 'HTTP/3';
-      } else {
-        networkInfo.httpVersion = `HTTP/${version}`;
-      }
-    }
-    
-    // Extract local address
-    const localIpMatch = stdout.match(/__CURL_LOCAL_IP__([^\n]+)/);
-    const localPortMatch = stdout.match(/__CURL_LOCAL_PORT__([^\n]+)/);
-    if (localIpMatch && localPortMatch) {
-      networkInfo.localAddress = `${localIpMatch[1].trim()}:${localPortMatch[1].trim()}`;
-    }
-    
-    // Extract remote address
-    const remoteIpMatch = stdout.match(/__CURL_REMOTE_IP__([^\n]+)/);
-    const remotePortMatch = stdout.match(/__CURL_REMOTE_PORT__([^\n]+)/);
-    if (remoteIpMatch && remotePortMatch) {
-      networkInfo.remoteAddress = `${remoteIpMatch[1].trim()}:${remotePortMatch[1].trim()}`;
-    }
-    
-    // Try to get SSL version from curl write-out
-    const sslVersionMatch = stdout.match(/__CURL_SSL_VERSION__([^\n]+)/);
-    if (sslVersionMatch && sslVersionMatch[1].trim()) {
-      const sslVersion = sslVersionMatch[1].trim();
-      if (sslVersion && sslVersion !== '' && sslVersion !== '0') {
-        networkInfo.tlsProtocol = sslVersion;
-      }
-    }
-    
-    // Parse SSL/TLS information from verbose output (stderr)
-    if (!networkInfo.tlsProtocol) {
-      const tlsPatterns = [
-        /SSL connection using (TLSv[\d.]+)\s*\/?\s*([^\r\n]*)/i,
-        /SSL connection using (TLSv[\d.]+)/i,
-        /schannel: (TLSv[\d.]+)/i,
-        /\*\s+(TLSv[\d.]+)/i,
-      ];
-      
-      for (const pattern of tlsPatterns) {
-        const match = stderr.match(pattern);
-        if (match) {
-          networkInfo.tlsProtocol = match[1].trim();
-          if (match[2] && match[2].trim()) {
-            networkInfo.cipherName = match[2].trim();
-          }
-          break;
-        }
-      }
-    }
-    
-    // Cipher patterns
-    if (!networkInfo.cipherName) {
-      const cipherPatterns = [
-        /Cipher is ([^\r\n]+)/i,
-        /cipher suite:\s*([^\r\n]+)/i,
-        /((?:ECDHE|DHE|RSA)[-_](?:RSA|ECDSA)[-_](?:AES|CHACHA20)[-_][\w\-_]+)/i,
-        /(TLS_[\w_]+)/,
-      ];
-      
-      for (const pattern of cipherPatterns) {
-        const match = stderr.match(pattern);
-        if (match) {
-          networkInfo.cipherName = match[1].trim();
-          break;
-        }
-      }
-    }
-    
-    // Certificate CN
-    const certCNPatterns = [
-      /\*\s+Subject:\s*CN\s*=\s*([^,\r\n]+)/i,
-      /subject:\s*CN\s*=\s*([^,\r\n]+)/i,
-    ];
-    
-    for (const pattern of certCNPatterns) {
-      const match = stderr.match(pattern);
-      if (match) {
-        networkInfo.certificateCN = match[1].trim();
-        break;
-      }
-    }
-    
-    // Issuer CN
-    const issuerCNPatterns = [
-      /\*\s+Issuer:.*CN\s*=\s*([^,\r\n]+)/i,
-      /issuer:.*CN\s*=\s*([^,\r\n]+)/i,
-    ];
-    
-    for (const pattern of issuerCNPatterns) {
-      const match = stderr.match(pattern);
-      if (match) {
-        networkInfo.issuerCN = match[1].trim();
-        break;
-      }
-    }
-    
-    // Valid until
-    const expireDatePatterns = [
-      /\*\s+Expire Date:\s*([^\r\n]+)/i,
-      /expire date:\s*([^\r\n]+)/i,
-      /Not After\s*:\s*([^\r\n]+)/i,
-    ];
-    
-    for (const pattern of expireDatePatterns) {
-      const match = stderr.match(pattern);
-      if (match) {
-        networkInfo.validUntil = match[1].trim();
-        break;
-      }
-    }
-    
-    return networkInfo;
-  }
-  
-  private async executeWithNodeHttps(request: Request): Promise<HttpResponse> {
-    const startTime = Date.now();
-    
-    return new Promise((resolve, reject) => {
-      try {
-        const urlObj = new URL(request.url);
-        const isHttps = urlObj.protocol === 'https:';
-        const client = isHttps ? https : http;
-        
-        // Build request options
-        const options: any = {
-          hostname: urlObj.hostname,
-          port: urlObj.port || (isHttps ? 443 : 80),
-          path: urlObj.pathname + urlObj.search,
-          method: request.method,
-          headers: {},
-          rejectUnauthorized: false, // Accept self-signed certificates
-        };
-        
-        // Add headers
-        if (request.headers && request.headers.length > 0) {
-          request.headers
-            .filter(h => h.enabled && h.key && h.value)
-            .forEach(header => {
-              options.headers[header.key] = header.value;
-            });
-        }
-        
-        // Add auth
-        if (request.auth && request.auth.type !== 'none') {
-          switch (request.auth.type) {
-            case 'basic':
-              if (request.auth.basic) {
-                const auth = Buffer.from(`${request.auth.basic.username}:${request.auth.basic.password}`).toString('base64');
-                options.headers['Authorization'] = `Basic ${auth}`;
-              }
-              break;
-            case 'bearer':
-              if (request.auth.bearer) {
-                options.headers['Authorization'] = `Bearer ${request.auth.bearer.token}`;
-              }
-              break;
-            case 'api-key':
-              if (request.auth.apiKey) {
-                if (request.auth.apiKey.addTo === 'header') {
-                  options.headers[request.auth.apiKey.key] = request.auth.apiKey.value;
-                }
-              }
-              break;
-          }
-        }
-        
-        let networkInfo: NetworkInfo = {};
-        let requestBody = '';
-        
-        // Prepare body
-        if (request.body && request.body.type !== 'none') {
-          switch (request.body.type) {
-            case 'json':
-              if (request.body.json) {
-                requestBody = typeof request.body.json === 'string' 
-                  ? request.body.json 
-                  : JSON.stringify(request.body.json);
-                options.headers['Content-Type'] = 'application/json';
-                options.headers['Content-Length'] = Buffer.byteLength(requestBody);
-              }
-              break;
-            case 'raw':
-              if (request.body.raw) {
-                requestBody = request.body.raw;
-                options.headers['Content-Length'] = Buffer.byteLength(requestBody);
-              }
-              break;
-            case 'x-www-form-urlencoded':
-              if (request.body.formData && request.body.formData.length > 0) {
-                requestBody = request.body.formData
-                  .filter(f => f.enabled && f.key)
-                  .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value || '')}`)
-                  .join('&');
-                options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-                options.headers['Content-Length'] = Buffer.byteLength(requestBody);
-              }
-              break;
-          }
-        }
-        
-        const req = client.request(options, (res: any) => {
-          const chunks: Buffer[] = [];
-          
-          // Capture TLS information for HTTPS
-          if (isHttps && res.socket && (res.socket as any).getPeerCertificate) {
-            const socket = res.socket as any;
-            const tlsSocket = socket;
-            
-            // Get TLS version
-            if (tlsSocket.getProtocol) {
-              networkInfo.tlsProtocol = tlsSocket.getProtocol();
-            }
-            
-            // Get cipher
-            if (tlsSocket.getCipher) {
-              const cipher = tlsSocket.getCipher();
-              if (cipher && cipher.name) {
-                networkInfo.cipherName = cipher.name;
-              }
-            }
-            
-            // Get certificate info
-            try {
-              const cert = tlsSocket.getPeerCertificate();
-              if (cert && cert.subject) {
-                networkInfo.certificateCN = cert.subject.CN;
-              }
-              if (cert && cert.issuer) {
-                networkInfo.issuerCN = cert.issuer.CN;
-              }
-              if (cert && cert.valid_to) {
-                networkInfo.validUntil = cert.valid_to;
-              }
-            } catch (err) {
-              console.error('Error getting certificate:', err);
-            }
-            
-            // Get local and remote addresses
-            if (socket.localAddress && socket.localPort) {
-              networkInfo.localAddress = `${socket.localAddress}:${socket.localPort}`;
-            }
-            if (socket.remoteAddress && socket.remotePort) {
-              networkInfo.remoteAddress = `${socket.remoteAddress}:${socket.remotePort}`;
-            }
-          }
-          
-          // Get HTTP version
-          networkInfo.httpVersion = `HTTP/${res.httpVersion}`;
-          
-          res.on('data', (chunk: Buffer) => {
-            chunks.push(chunk);
-          });
-          
-          res.on('end', () => {
-            const body = Buffer.concat(chunks).toString('utf8');
-            const time = Date.now() - startTime;
-            const size = Buffer.concat(chunks).length;
-            
-            // Parse response headers
-            const headers: Record<string, string> = {};
-            Object.keys(res.headers).forEach(key => {
-              headers[key] = res.headers[key];
-            });
-            
-            resolve({
-              status: res.statusCode || 0,
-              statusText: res.statusMessage || 'Unknown',
-              headers,
-              body,
-              time,
-              size,
-              timestamp: Date.now(),
-              networkInfo
-            });
-          });
-        });
-        
-        req.on('error', (error: Error) => {
-          reject(error);
-        });
-        
-        if (requestBody) {
-          req.write(requestBody);
-        }
-        
-        req.end();
-      } catch (error) {
-        reject(error);
-      }
-    });
-  }
-  
-  async execute(request: Request): Promise<HttpResponse> {
-    const startTime = Date.now();
-    
-    // For HTTPS requests, use Node.js native client to get full TLS details
-    try {
-      const url = new URL(request.url);
-      if (url.protocol === 'https:') {
-        console.log('Using Node.js HTTPS client for TLS details');
-        return await this.executeWithNodeHttps(request);
-      }
-    } catch (urlError) {
-      // If URL parsing fails, fall through to curl
-      console.log('URL parsing failed, using curl');
-    }
-    
-    // Fall back to curl for HTTP or if Node.js method fails
-    try {
-      const command = this.buildCurlCommand(request);
-      console.log('Executing command:', command);
-      
-      let stdout = '';
-      let stderr = '';
-      
-      try {
-        const result = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
-        stdout = result.stdout;
-        stderr = result.stderr;
-      } catch (error: any) {
-        stdout = error.stdout || '';
-        stderr = error.stderr || '';
-        
-        if (!stdout) {
-          if (stderr.includes('Could not resolve host')) {
-            throw new Error('Could not resolve host. Check the URL.');
-          } else if (stderr.includes('Failed to connect')) {
-            throw new Error('Connection failed. Is the server running?');
-          } else if (stderr.includes('Connection refused')) {
-            throw new Error('Connection refused. Is the server running on this port?');
-          } else if (stderr.includes('Timeout')) {
-            throw new Error('Request timed out.');
-          } else {
-            throw new Error(stderr || error.message || 'Request failed');
-          }
-        }
-      }
-      
-      if (!stdout) {
-        throw new Error('No response received from server');
-      }
-      
-      const networkInfo = this.parseNetworkInfo(stderr, stdout);
-      
-      const parts = stdout.split('\n\n');
-      let headerSection = parts[0];
-      let bodyParts = parts.slice(1);
-      
-      const statusLines = headerSection.split('\n').filter(line => line.startsWith('HTTP/'));
-      if (statusLines.length > 1) {
-        const lastStatusIndex = headerSection.lastIndexOf('HTTP/');
-        headerSection = headerSection.substring(lastStatusIndex);
-      }
-      
-      const timeMatch = stdout.match(/__CURL_TIME__([0-9.]+)/);
-      const sizeMatch = stdout.match(/__CURL_SIZE__([0-9]+)/);
-      const httpCodeMatch = stdout.match(/__CURL_HTTP_CODE__([0-9]+)/);
-      
-      let body = bodyParts.join('\n\n');
-      body = body.replace(/__CURL_TIME__[0-9.]+\n?/g, '');
-      body = body.replace(/__CURL_SIZE__[0-9]+\n?/g, '');
-      body = body.replace(/__CURL_HTTP_CODE__[0-9]+\n?/g, '');
-      body = body.replace(/__CURL_HTTP_VERSION__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_LOCAL_IP__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_LOCAL_PORT__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_REMOTE_IP__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_REMOTE_PORT__[^\n]+\n?/g, '');
-      body = body.replace(/__CURL_SSL_VERSION__[^\n]+\n?/g, '');
-      body = body.trim();
-      
-      const statusLine = headerSection.split('\n')[0];
-      const statusMatch = statusLine.match(/HTTP\/[\d.]+ (\d+) (.+)/);
-      
-      let status = httpCodeMatch ? parseInt(httpCodeMatch[1]) : 0;
-      if (!status && statusMatch) {
-        status = parseInt(statusMatch[1]);
-      }
-      
-      const statusText = statusMatch ? statusMatch[2].trim() : 'Unknown';
-      
-      const headers = this.parseHeaders(headerSection);
-      
-      const time = timeMatch ? parseFloat(timeMatch[1]) * 1000 : Date.now() - startTime;
-      const size = sizeMatch ? parseInt(sizeMatch[1]) : body.length;
-      
-      return {
-        status: status || 0,
-        statusText: statusText || 'No Response',
-        headers,
-        body: body || 'No response body',
-        time,
-        size,
-        timestamp: Date.now(),
-        networkInfo
-      };
-    } catch (error) {
-      return {
-        status: 0,
-        statusText: 'Error',
-        headers: {},
-        body: (error as Error).message,
-        time: Date.now() - startTime,
-        size: 0,
-        timestamp: Date.now()
-      };
-    }
-  }
-}
 </file>
 
 <file path="src/renderer/helpers/sidebar-renderer.ts">
@@ -2582,6 +1905,185 @@ function renderRequest(
 }
 </file>
 
+<file path="src/renderer/helpers/key-value-renderer.ts">
+import { KeyValue } from '../../shared/types';
+
+export function createKeyValueRow(
+  key: string = '',
+  value: string = '',
+  enabled: boolean = true,
+  onDelete: () => void,
+  onChange?: () => void,
+  sensitive: boolean = false,
+  showSensitiveToggle: boolean = false
+): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'flex gap-2 items-center mb-2';
+  
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = enabled;
+  checkbox.className = 'w-5 h-5 rounded border border-gray-700 accent-[rgb(7,14,29)] cursor-pointer bg-[rgba(7,14,29,1.0)]';
+  if (onChange) {
+    checkbox.addEventListener('change', onChange);
+  }
+  
+  const keyInput = document.createElement('input');
+  keyInput.type = 'text';
+  keyInput.value = key;
+  keyInput.placeholder = 'Key';
+  keyInput.className = 'flex-1 bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700';
+  keyInput.dataset.keyInput = 'true';
+  if (onChange) {
+    keyInput.addEventListener('input', onChange);
+  }
+  
+  const valueInput = document.createElement('input');
+  valueInput.type = sensitive ? 'password' : 'text';
+  valueInput.value = value;
+  valueInput.placeholder = 'Value';
+  valueInput.className = 'flex-1 bg-[rgba(7,14,29,0.7)] text-white p-2 rounded border border-gray-700';
+  valueInput.dataset.valueInput = 'true';
+  if (onChange) {
+    valueInput.addEventListener('input', onChange);
+  }
+  
+  row.appendChild(checkbox);
+  row.appendChild(keyInput);
+  row.appendChild(valueInput);
+  
+  // Add sensitive toggle if needed
+  if (showSensitiveToggle) {
+    const sensitiveBtn = document.createElement('button');
+    sensitiveBtn.type = 'button';
+    
+    // Locked state: same effects but brighter background
+    const lockedClass = `px-3 py-3 text-xl rounded-md overflow-hidden relative border border-gray-400 cursor-pointer flex items-center justify-center
+                bg-[rgba(17,24,39,0.7)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10`;
+    
+    // Unlocked state: normal background
+    const unlockedClass = `px-3 py-3 text-xl rounded-md overflow-hidden relative border border-gray-400 cursor-pointer flex items-center justify-center
+                bg-[rgba(17,24,39,0.3)]
+                backdrop-blur-xs
+                shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)]
+                transition-all duration-500 ease-in-out
+                hover:backdrop-blur-md
+                hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)]
+                before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full
+                before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent
+                before:skew-x-[-25deg]
+                before:transition-all before:duration-500 before:ease-in-out
+                hover:before:left-[150%]
+                active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)]
+                active:duration-10`;
+    
+    sensitiveBtn.className = sensitive ? lockedClass : unlockedClass;
+    sensitiveBtn.dataset.sensitiveBtn = 'true';
+    
+    sensitiveBtn.innerHTML = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#ffffff"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M12 14.5V16.5M7 10.0288C7.47142 10 8.05259 10 8.8 10H15.2C15.9474 10 16.5286 10 17 10.0288M7 10.0288C6.41168 10.0647 5.99429 10.1455 5.63803 10.327C5.07354 10.6146 4.6146 11.0735 4.32698 11.638C4 12.2798 4 13.1198 4 14.8V16.2C4 17.8802 4 18.7202 4.32698 19.362C4.6146 19.9265 5.07354 20.3854 5.63803 20.673C6.27976 21 7.11984 21 8.8 21H15.2C16.8802 21 17.7202 21 18.362 20.673C18.9265 20.3854 19.3854 19.9265 19.673 19.362C20 18.7202 20 17.8802 20 16.2V14.8C20 13.1198 20 12.2798 19.673 11.638C19.3854 11.0735 18.9265 10.6146 18.362 10.327C18.0057 10.1455 17.5883 10.0647 17 10.0288M7 10.0288V8C7 5.23858 9.23858 3 12 3C14.7614 3 17 5.23858 17 8V10.0288" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path> </g></svg>`;
+    sensitiveBtn.title = 'Mark as sensitive (encrypted storage)';
+    
+    let isSensitive = sensitive;
+    sensitiveBtn.onclick = () => {
+      isSensitive = !isSensitive;
+      sensitiveBtn.className = isSensitive ? lockedClass : unlockedClass;
+      valueInput.type = isSensitive ? 'password' : 'text';
+      sensitiveBtn.dataset.isSensitive = isSensitive.toString();
+      if (onChange) onChange();
+    };
+    sensitiveBtn.dataset.isSensitive = sensitive.toString();
+    
+    row.appendChild(sensitiveBtn);
+  }
+  
+  const deleteBtn = document.createElement('button');
+  deleteBtn.innerHTML = `<svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#ffffff"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <g id="Menu / Close_SM"> <path id="Vector" d="M16 16L12 12M12 12L8 8M12 12L16 8M12 12L8 16" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path> </g> </g></svg>`;
+  deleteBtn.className = "px-2 py-2 text-xl font-bold overflow-hidden border border-gray-400 rounded-md cursor-pointer flex items-center justify-center bg-[rgba(17,24,39,0.3)] backdrop-blur-xs shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_5px_2.5px_rgba(255,255,255,0.25)] transition-all duration-500 ease-in-out hover:backdrop-blur-md hover:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_10px_5px_rgba(255,255,255,0.5)] before:content-[''] before:absolute before:top-0 before:left-[-100%] before:w-[50%] before:h-full before:bg-gradient-to-r before:from-transparent before:via-white/40 before:to-transparent before:skew-x-[-25deg] before:transition-all before:duration-500 before:ease-in-out hover:before:left-[150%] active:shadow-[0_8px_32px_rgba(0,0,0,0.1),_inset_0_1px_0_rgba(255,255,255,0.5),_inset_0_-1px_0_rgba(255,255,255,0.1),_inset_0_0_15px_7.5px_rgba(255,255,255,0.75)] active:duration-10";
+  deleteBtn.onclick = onDelete;
+  
+  row.appendChild(deleteBtn);
+  
+  return row;
+}
+
+export function syncArrayFromDOM(container: HTMLDivElement, items: KeyValue[]): void {
+  const rows = container.querySelectorAll('.flex');
+  
+  // Clear the array and rebuild from DOM
+  items.length = 0;
+  
+  rows.forEach((row) => {
+    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const keyInput = row.querySelector('[data-key-input]') as HTMLInputElement;
+    const valueInput = row.querySelector('[data-value-input]') as HTMLInputElement;
+    const sensitiveBtn = row.querySelector('[data-sensitive-btn]') as HTMLButtonElement;
+    
+    if (checkbox && keyInput && valueInput) {
+      items.push({
+        key: keyInput.value,
+        value: valueInput.value,
+        enabled: checkbox.checked,
+        sensitive: sensitiveBtn ? sensitiveBtn.dataset.isSensitive === 'true' : false
+      });
+    }
+  });
+}
+
+export function renderKeyValueList(
+  container: HTMLDivElement,
+  items: KeyValue[],
+  onUpdate: () => void,
+  showSensitiveToggle: boolean = false
+): void {
+  
+  container.innerHTML = '';
+  items.forEach((item, index) => {
+    const row = createKeyValueRow(
+      item.key, 
+      item.value, 
+      item.enabled, 
+      () => {
+        items.splice(index, 1);
+        renderKeyValueList(container, items, onUpdate, showSensitiveToggle);
+        onUpdate();
+      }, 
+      onUpdate,
+      item.sensitive || false,
+      showSensitiveToggle
+    );
+    container.appendChild(row);
+  });
+}
+
+export function addKeyValue(
+  items: KeyValue[],
+  container: HTMLDivElement,
+  onUpdate: () => void,
+  showSensitiveToggle: boolean = false
+): void {
+  // Sync current DOM values back to array FIRST
+  syncArrayFromDOM(container, items);
+  
+  // Then add new empty item
+  items.push({ key: '', value: '', enabled: true });
+  
+  // Re-render
+  renderKeyValueList(container, items, onUpdate, showSensitiveToggle);
+}
+</file>
+
 <file path="src/styles/input.css">
 @import 'highlight.js/styles/atom-one-dark.css';
 
@@ -2631,6 +2133,661 @@ function renderRequest(
     color: white;
     font-size: 14px;
     line-height: 1.25rem;
+  }
+}
+</file>
+
+<file path="src/main/ipc/request-handler.ts">
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as https from 'https';
+import * as http from 'http';
+import { URL } from 'url';
+import { Request, HttpResponse, KeyValue, NetworkInfo } from '../../shared/types';
+
+const execAsync = promisify(exec);
+
+export class RequestHandler {
+  private buildCurlCommand(request: Request): string {
+    let command = 'curl -i -s';
+    
+    // Add method
+    if (request.method !== 'GET') {
+      command += ` -X ${request.method}`;
+    }
+    
+    // Add headers
+    if (request.headers && request.headers.length > 0) {
+      request.headers
+        .filter(h => h.enabled && h.key && h.value)
+        .forEach(header => {
+          command += ` -H "${header.key}: ${this.escapeValue(header.value)}"`;
+        });
+    }
+    
+    // Add auth
+    if (request.auth && request.auth.type !== 'none') {
+      switch (request.auth.type) {
+        case 'basic':
+          if (request.auth.basic && request.auth.basic.username && request.auth.basic.password) {
+            command += ` -u "${this.escapeValue(request.auth.basic.username)}:${this.escapeValue(request.auth.basic.password)}"`;
+          }
+          break;
+        case 'bearer':
+          if (request.auth.bearer && request.auth.bearer.token) {
+            command += ` -H "Authorization: Bearer ${this.escapeValue(request.auth.bearer.token)}"`;
+          }
+          break;
+        case 'api-key':
+          if (request.auth.apiKey && request.auth.apiKey.key && request.auth.apiKey.value) {
+            if (request.auth.apiKey.addTo === 'header') {
+              command += ` -H "${this.escapeValue(request.auth.apiKey.key)}: ${this.escapeValue(request.auth.apiKey.value)}"`;
+            }
+          }
+          break;
+      }
+    }
+    
+    // Build URL with query params
+    let url = request.url;
+    const enabledParams = request.queryParams?.filter(p => p.enabled && p.key) || [];
+    if (enabledParams.length > 0) {
+      const queryString = enabledParams
+        .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+        .join('&');
+      url += (url.includes('?') ? '&' : '?') + queryString;
+    }
+    
+    // Add API key to query if needed
+    if (request.auth?.type === 'api-key' && 
+        request.auth.apiKey?.addTo === 'query' && 
+        request.auth.apiKey.key && 
+        request.auth.apiKey.value) {
+      const separator = url.includes('?') ? '&' : '?';
+      url += `${separator}${encodeURIComponent(request.auth.apiKey.key)}=${encodeURIComponent(request.auth.apiKey.value)}`;
+    }
+    
+    // Add body
+    if (request.body && request.body.type !== 'none') {
+      switch (request.body.type) {
+        case 'json':
+          if (request.body.json) {
+            const jsonStr = typeof request.body.json === 'string' 
+              ? request.body.json 
+              : JSON.stringify(request.body.json);
+            if (jsonStr.trim()) {
+              command += ` -H "Content-Type: application/json"`;
+              command += ` -d '${this.escapeValue(jsonStr)}'`;
+            }
+          }
+          break;
+        case 'raw':
+          if (request.body.raw && request.body.raw.trim()) {
+            command += ` -d '${this.escapeValue(request.body.raw)}'`;
+          }
+          break;
+        case 'x-www-form-urlencoded':
+          if (request.body.formData && request.body.formData.length > 0) {
+            command += ` -H "Content-Type: application/x-www-form-urlencoded"`;
+            const formStr = request.body.formData
+              .filter(f => f.enabled && f.key)
+              .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value || '')}`)
+              .join('&');
+            if (formStr) {
+              command += ` -d '${formStr}'`;
+            }
+          }
+          break;
+        case 'form-data':
+          if (request.body.formData && request.body.formData.length > 0) {
+            request.body.formData
+              .filter(f => f.enabled && f.key)
+              .forEach(field => {
+                command += ` -F "${this.escapeValue(field.key)}=${this.escapeValue(field.value || '')}"`;
+              });
+          }
+          break;
+      }
+    }
+    
+    // Add timing, size info, and connection details
+    command += ` -w "\\n__CURL_TIME__%{time_total}\\n__CURL_SIZE__%{size_download}\\n__CURL_HTTP_CODE__%{http_code}\\n__CURL_HTTP_VERSION__%{http_version}\\n__CURL_LOCAL_IP__%{local_ip}\\n__CURL_LOCAL_PORT__%{local_port}\\n__CURL_REMOTE_IP__%{remote_ip}\\n__CURL_REMOTE_PORT__%{remote_port}\\n__CURL_SSL_VERSION__%{ssl_version}"`;
+    
+    // Show errors but don't fail
+    command += ` --fail-with-body`;
+    
+    // Add verbose flag to capture SSL/TLS info
+    command += ` -v`;
+    
+    command += ` "${url}"`;
+    
+    return command;
+  }
+  
+  private escapeValue(value: string): string {
+    return value.replace(/'/g, "'\\''");
+  }
+  
+  private getStatusText(code: number): string {
+    const statusTexts: Record<number, string> = {
+      100: 'Continue',
+      101: 'Switching Protocols',
+      200: 'OK',
+      201: 'Created',
+      202: 'Accepted',
+      203: 'Non-Authoritative Information',
+      204: 'No Content',
+      205: 'Reset Content',
+      206: 'Partial Content',
+      300: 'Multiple Choices',
+      301: 'Moved Permanently',
+      302: 'Found',
+      303: 'See Other',
+      304: 'Not Modified',
+      307: 'Temporary Redirect',
+      308: 'Permanent Redirect',
+      400: 'Bad Request',
+      401: 'Unauthorized',
+      402: 'Payment Required',
+      403: 'Forbidden',
+      404: 'Not Found',
+      405: 'Method Not Allowed',
+      406: 'Not Acceptable',
+      407: 'Proxy Authentication Required',
+      408: 'Request Timeout',
+      409: 'Conflict',
+      410: 'Gone',
+      411: 'Length Required',
+      412: 'Precondition Failed',
+      413: 'Payload Too Large',
+      414: 'URI Too Long',
+      415: 'Unsupported Media Type',
+      416: 'Range Not Satisfiable',
+      417: 'Expectation Failed',
+      418: "I'm a teapot",
+      422: 'Unprocessable Entity',
+      425: 'Too Early',
+      426: 'Upgrade Required',
+      428: 'Precondition Required',
+      429: 'Too Many Requests',
+      431: 'Request Header Fields Too Large',
+      451: 'Unavailable For Legal Reasons',
+      500: 'Internal Server Error',
+      501: 'Not Implemented',
+      502: 'Bad Gateway',
+      503: 'Service Unavailable',
+      504: 'Gateway Timeout',
+      505: 'HTTP Version Not Supported',
+      511: 'Network Authentication Required'
+    };
+    return statusTexts[code] || 'Unknown';
+  }
+  
+  private parseHeaders(headerText: string): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const lines = headerText.split('\n');
+    
+    for (const line of lines) {
+      const match = line.match(/^([^:]+):\s*(.+)$/);
+      if (match) {
+        headers[match[1].toLowerCase()] = match[2].trim();
+      }
+    }
+    
+    return headers;
+  }
+  
+  private parseNetworkInfo(stderr: string, stdout: string): NetworkInfo {
+    const networkInfo: NetworkInfo = {};
+    
+    // Extract HTTP version from curl write-out
+    const httpVersionMatch = stdout.match(/__CURL_HTTP_VERSION__([^\n]+)/);
+    if (httpVersionMatch) {
+      const version = httpVersionMatch[1].trim();
+      if (version === '2') {
+        networkInfo.httpVersion = 'HTTP/2';
+      } else if (version === '1.1') {
+        networkInfo.httpVersion = 'HTTP/1.1';
+      } else if (version === '1.0') {
+        networkInfo.httpVersion = 'HTTP/1.0';
+      } else if (version === '3') {
+        networkInfo.httpVersion = 'HTTP/3';
+      } else {
+        networkInfo.httpVersion = `HTTP/${version}`;
+      }
+    }
+    
+    // Extract local address
+    const localIpMatch = stdout.match(/__CURL_LOCAL_IP__([^\n]+)/);
+    const localPortMatch = stdout.match(/__CURL_LOCAL_PORT__([^\n]+)/);
+    if (localIpMatch && localPortMatch) {
+      networkInfo.localAddress = `${localIpMatch[1].trim()}:${localPortMatch[1].trim()}`;
+    }
+    
+    // Extract remote address
+    const remoteIpMatch = stdout.match(/__CURL_REMOTE_IP__([^\n]+)/);
+    const remotePortMatch = stdout.match(/__CURL_REMOTE_PORT__([^\n]+)/);
+    if (remoteIpMatch && remotePortMatch) {
+      networkInfo.remoteAddress = `${remoteIpMatch[1].trim()}:${remotePortMatch[1].trim()}`;
+    }
+    
+    // Try to get SSL version from curl write-out
+    const sslVersionMatch = stdout.match(/__CURL_SSL_VERSION__([^\n]+)/);
+    if (sslVersionMatch && sslVersionMatch[1].trim()) {
+      const sslVersion = sslVersionMatch[1].trim();
+      if (sslVersion && sslVersion !== '' && sslVersion !== '0') {
+        networkInfo.tlsProtocol = sslVersion;
+      }
+    }
+    
+    // Parse SSL/TLS information from verbose output (stderr)
+    if (!networkInfo.tlsProtocol) {
+      const tlsPatterns = [
+        /SSL connection using (TLSv[\d.]+)\s*\/?\s*([^\r\n]*)/i,
+        /SSL connection using (TLSv[\d.]+)/i,
+        /schannel: (TLSv[\d.]+)/i,
+        /\*\s+(TLSv[\d.]+)/i,
+      ];
+      
+      for (const pattern of tlsPatterns) {
+        const match = stderr.match(pattern);
+        if (match) {
+          networkInfo.tlsProtocol = match[1].trim();
+          if (match[2] && match[2].trim()) {
+            networkInfo.cipherName = match[2].trim();
+          }
+          break;
+        }
+      }
+    }
+    
+    // Cipher patterns
+    if (!networkInfo.cipherName) {
+      const cipherPatterns = [
+        /Cipher is ([^\r\n]+)/i,
+        /cipher suite:\s*([^\r\n]+)/i,
+        /((?:ECDHE|DHE|RSA)[-_](?:RSA|ECDSA)[-_](?:AES|CHACHA20)[-_][\w\-_]+)/i,
+        /(TLS_[\w_]+)/,
+      ];
+      
+      for (const pattern of cipherPatterns) {
+        const match = stderr.match(pattern);
+        if (match) {
+          networkInfo.cipherName = match[1].trim();
+          break;
+        }
+      }
+    }
+    
+    // Certificate CN
+    const certCNPatterns = [
+      /\*\s+Subject:\s*CN\s*=\s*([^,\r\n]+)/i,
+      /subject:\s*CN\s*=\s*([^,\r\n]+)/i,
+    ];
+    
+    for (const pattern of certCNPatterns) {
+      const match = stderr.match(pattern);
+      if (match) {
+        networkInfo.certificateCN = match[1].trim();
+        break;
+      }
+    }
+    
+    // Issuer CN
+    const issuerCNPatterns = [
+      /\*\s+Issuer:.*CN\s*=\s*([^,\r\n]+)/i,
+      /issuer:.*CN\s*=\s*([^,\r\n]+)/i,
+    ];
+    
+    for (const pattern of issuerCNPatterns) {
+      const match = stderr.match(pattern);
+      if (match) {
+        networkInfo.issuerCN = match[1].trim();
+        break;
+      }
+    }
+    
+    // Valid until
+    const expireDatePatterns = [
+      /\*\s+Expire Date:\s*([^\r\n]+)/i,
+      /expire date:\s*([^\r\n]+)/i,
+      /Not After\s*:\s*([^\r\n]+)/i,
+    ];
+    
+    for (const pattern of expireDatePatterns) {
+      const match = stderr.match(pattern);
+      if (match) {
+        networkInfo.validUntil = match[1].trim();
+        break;
+      }
+    }
+    
+    return networkInfo;
+  }
+  
+  private async executeWithNodeHttps(request: Request): Promise<HttpResponse> {
+    const startTime = Date.now();
+    
+    return new Promise((resolve, reject) => {
+      try {
+        // Build URL with query params first
+        let fullUrl = request.url;
+        const enabledParams = request.queryParams?.filter(p => p.enabled && p.key) || [];
+        if (enabledParams.length > 0) {
+          const queryString = enabledParams
+            .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value || '')}`)
+            .join('&');
+          fullUrl += (fullUrl.includes('?') ? '&' : '?') + queryString;
+        }
+        
+        // Add API key to query if needed
+        if (request.auth?.type === 'api-key' && 
+            request.auth.apiKey?.addTo === 'query' && 
+            request.auth.apiKey.key && 
+            request.auth.apiKey.value) {
+          const separator = fullUrl.includes('?') ? '&' : '?';
+          fullUrl += `${separator}${encodeURIComponent(request.auth.apiKey.key)}=${encodeURIComponent(request.auth.apiKey.value)}`;
+        }
+        
+        const urlObj = new URL(fullUrl);
+        const isHttps = urlObj.protocol === 'https:';
+        const client = isHttps ? https : http;
+        
+        // Build request options
+        const options: any = {
+          hostname: urlObj.hostname,
+          port: urlObj.port || (isHttps ? 443 : 80),
+          path: urlObj.pathname + urlObj.search,
+          method: request.method,
+          headers: {},
+          rejectUnauthorized: false,
+        };
+        
+        // Add headers
+        if (request.headers && request.headers.length > 0) {
+          request.headers
+            .filter(h => h.enabled && h.key && h.value)
+            .forEach(header => {
+              options.headers[header.key] = header.value;
+            });
+        }
+        
+        // Add auth
+        if (request.auth && request.auth.type !== 'none') {
+          switch (request.auth.type) {
+            case 'basic':
+              if (request.auth.basic) {
+                const auth = Buffer.from(`${request.auth.basic.username}:${request.auth.basic.password}`).toString('base64');
+                options.headers['Authorization'] = `Basic ${auth}`;
+              }
+              break;
+            case 'bearer':
+              if (request.auth.bearer) {
+                options.headers['Authorization'] = `Bearer ${request.auth.bearer.token}`;
+              }
+              break;
+            case 'api-key':
+              if (request.auth.apiKey) {
+                if (request.auth.apiKey.addTo === 'header') {
+                  options.headers[request.auth.apiKey.key] = request.auth.apiKey.value;
+                }
+              }
+              break;
+          }
+        }
+        
+        let networkInfo: NetworkInfo = {};
+        let requestBody = '';
+        
+        // Prepare body
+        if (request.body && request.body.type !== 'none') {
+          switch (request.body.type) {
+            case 'json':
+              if (request.body.json) {
+                requestBody = typeof request.body.json === 'string' 
+                  ? request.body.json 
+                  : JSON.stringify(request.body.json);
+                options.headers['Content-Type'] = 'application/json';
+                options.headers['Content-Length'] = Buffer.byteLength(requestBody);
+              }
+              break;
+            case 'raw':
+              if (request.body.raw) {
+                requestBody = request.body.raw;
+                options.headers['Content-Length'] = Buffer.byteLength(requestBody);
+              }
+              break;
+            case 'x-www-form-urlencoded':
+              if (request.body.formData && request.body.formData.length > 0) {
+                requestBody = request.body.formData
+                  .filter(f => f.enabled && f.key)
+                  .map(f => `${encodeURIComponent(f.key)}=${encodeURIComponent(f.value || '')}`)
+                  .join('&');
+                options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+                options.headers['Content-Length'] = Buffer.byteLength(requestBody);
+              }
+              break;
+          }
+        }
+        
+        const req = client.request(options, (res: any) => {
+          const chunks: Buffer[] = [];
+          
+          // Capture TLS information for HTTPS
+          if (isHttps && res.socket && (res.socket as any).getPeerCertificate) {
+            const socket = res.socket as any;
+            const tlsSocket = socket;
+            
+            // Get TLS version
+            if (tlsSocket.getProtocol) {
+              networkInfo.tlsProtocol = tlsSocket.getProtocol();
+            }
+            
+            // Get cipher
+            if (tlsSocket.getCipher) {
+              const cipher = tlsSocket.getCipher();
+              if (cipher && cipher.name) {
+                networkInfo.cipherName = cipher.name;
+              }
+            }
+            
+            // Get certificate info
+            try {
+              const cert = tlsSocket.getPeerCertificate();
+              if (cert && cert.subject) {
+                networkInfo.certificateCN = cert.subject.CN;
+              }
+              if (cert && cert.issuer) {
+                networkInfo.issuerCN = cert.issuer.CN;
+              }
+              if (cert && cert.valid_to) {
+                networkInfo.validUntil = cert.valid_to;
+              }
+            } catch (err) {
+              console.error('Error getting certificate:', err);
+            }
+            
+            // Get local and remote addresses
+            if (socket.localAddress && socket.localPort) {
+              networkInfo.localAddress = `${socket.localAddress}:${socket.localPort}`;
+            }
+            if (socket.remoteAddress && socket.remotePort) {
+              networkInfo.remoteAddress = `${socket.remoteAddress}:${socket.remotePort}`;
+            }
+          }
+          
+          // Get HTTP version
+          networkInfo.httpVersion = `HTTP/${res.httpVersion}`;
+          
+          res.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
+          });
+          
+          res.on('end', () => {
+            const body = Buffer.concat(chunks).toString('utf8');
+            const time = Date.now() - startTime;
+            const size = Buffer.concat(chunks).length;
+            
+            // Parse response headers
+            const headers: Record<string, string> = {};
+            Object.keys(res.headers).forEach(key => {
+              headers[key] = res.headers[key];
+            });
+            
+            const statusCode = res.statusCode || 0;
+            const statusText = res.statusMessage || this.getStatusText(statusCode);
+            
+            resolve({
+              status: statusCode,
+              statusText: statusText,
+              headers,
+              body,
+              time,
+              size,
+              timestamp: Date.now(),
+              networkInfo
+            });
+          });
+        });
+        
+        req.on('error', (error: Error) => {
+          reject(error);
+        });
+        
+        if (requestBody) {
+          req.write(requestBody);
+        }
+        
+        req.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+  
+  async execute(request: Request): Promise<HttpResponse> {
+    const startTime = Date.now();
+    
+    // For all requests, use Node.js native client for better body parsing
+    try {
+      const url = new URL(request.url);
+      console.log('Using Node.js HTTP client');
+      return await this.executeWithNodeHttps(request);
+    } catch (urlError) {
+      console.log('URL parsing failed, using curl');
+    }
+    
+    // Fall back to curl only if URL parsing fails
+    try {
+      const command = this.buildCurlCommand(request);
+      console.log('Executing command:', command);
+      
+      let stdout = '';
+      let stderr = '';
+      
+      try {
+        const result = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 });
+        stdout = result.stdout;
+        stderr = result.stderr;
+      } catch (error: any) {
+        stdout = error.stdout || '';
+        stderr = error.stderr || '';
+        
+        if (!stdout) {
+          if (stderr.includes('Could not resolve host')) {
+            throw new Error('Could not resolve host. Check the URL.');
+          } else if (stderr.includes('Failed to connect')) {
+            throw new Error('Connection failed. Is the server running?');
+          } else if (stderr.includes('Connection refused')) {
+            throw new Error('Connection refused. Is the server running on this port?');
+          } else if (stderr.includes('Timeout')) {
+            throw new Error('Request timed out.');
+          } else {
+            throw new Error(stderr || error.message || 'Request failed');
+          }
+        }
+      }
+      
+      if (!stdout) {
+        throw new Error('No response received from server');
+      }
+      
+      const networkInfo = this.parseNetworkInfo(stderr, stdout);
+      
+      // Remove curl metadata first
+      let cleanedOutput = stdout;
+      cleanedOutput = cleanedOutput.replace(/__CURL_TIME__[0-9.]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_SIZE__[0-9]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_HTTP_CODE__[0-9]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_HTTP_VERSION__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_LOCAL_IP__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_LOCAL_PORT__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_REMOTE_IP__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_REMOTE_PORT__[^\n]+\n?/g, '');
+      cleanedOutput = cleanedOutput.replace(/__CURL_SSL_VERSION__[^\n]+\n?/g, '');
+      
+      // Find the last HTTP status line (in case of redirects)
+      const lines = cleanedOutput.split('\n');
+      let lastStatusIndex = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('HTTP/')) {
+          lastStatusIndex = i;
+        }
+      }
+      
+      if (lastStatusIndex === -1) {
+        throw new Error('No HTTP status line found in response');
+      }
+      
+      // Find where headers end (first empty line after status)
+      let headerEndIndex = lastStatusIndex + 1;
+      while (headerEndIndex < lines.length && lines[headerEndIndex].trim() !== '') {
+        headerEndIndex++;
+      }
+      
+      // Extract status line
+      const statusLine = lines[lastStatusIndex];
+      const statusMatch = statusLine.match(/HTTP\/[\d.]+ (\d+) (.+)/);
+      
+      const status = statusMatch ? parseInt(statusMatch[1]) : 0;
+      const statusText = statusMatch ? statusMatch[2].trim() : this.getStatusText(status);
+      
+      // Extract headers
+      const headerLines = lines.slice(lastStatusIndex + 1, headerEndIndex);
+      const headerSection = headerLines.join('\n');
+      const headers = this.parseHeaders(headerSection);
+      
+      // Extract body (everything after the empty line)
+      const body = lines.slice(headerEndIndex + 1).join('\n').trim();
+      
+      // Get timing info from original stdout
+      const timeMatch = stdout.match(/__CURL_TIME__([0-9.]+)/);
+      const sizeMatch = stdout.match(/__CURL_SIZE__([0-9]+)/);
+      
+      const time = timeMatch ? parseFloat(timeMatch[1]) * 1000 : Date.now() - startTime;
+      const size = sizeMatch ? parseInt(sizeMatch[1]) : body.length;
+      
+      return {
+        status: status || 0,
+        statusText: statusText,
+        headers,
+        body: body || '',
+        time,
+        size,
+        timestamp: Date.now(),
+        networkInfo
+      };
+    } catch (error) {
+      return {
+        status: 0,
+        statusText: 'Error',
+        headers: {},
+        body: (error as Error).message,
+        time: Date.now() - startTime,
+        size: 0,
+        timestamp: Date.now()
+      };
+    }
   }
 }
 </file>
@@ -3132,7 +3289,7 @@ import { TabManager } from './helpers/tab-manager';
 import { replaceVariables } from './helpers/variable-replacer';
 import { DisplayFormat, displayResponse } from './helpers/response-handler';
 import { buildRequest, methodColors, isHttpMethod } from './helpers/request-builder';
-import { renderKeyValueList, addKeyValue } from './helpers/key-value-renderer';
+import { renderKeyValueList, addKeyValue, syncArrayFromDOM } from './helpers/key-value-renderer';
 import { deleteFolder, deleteRequest, createFolder, createRequest, addFolderToProject, addRequestToProject } from './helpers/project-manager';
 import { renderSidebar, SidebarCallbacks } from './helpers/sidebar-renderer';
 import { renderProjectList, ProjectCallbacks } from './helpers/project-renderer';
@@ -3627,9 +3784,9 @@ function loadTabById(tabId: string): void {
       authTypeSelect
     },
     {
-      renderParams: () => renderKeyValueList(paramsContainer, queryParams, debouncedSaveCurrentTab),
-      renderHeaders: () => renderKeyValueList(headersContainer, headers, debouncedSaveCurrentTab),
-      renderFormFields: () => renderKeyValueList(bodyFormDataContainer, formFields, debouncedSaveCurrentTab)
+      renderParams: () => renderKeyValueList(paramsContainer, queryParams, debouncedSaveCurrentTab, true),
+      renderHeaders: () => renderKeyValueList(headersContainer, headers, debouncedSaveCurrentTab, true),
+      renderFormFields: () => renderKeyValueList(bodyFormDataContainer, formFields, debouncedSaveCurrentTab, true)
     },
     {
       setMethod: (method) => {
@@ -3750,7 +3907,7 @@ function openProjectForm(project?: Project): void {
   projectBaseUrlInput.value = project?.baseUrl || '';
   
   projectVariables = project?.variables ? [...project.variables] : [];
-  renderKeyValueList(projectVariablesContainer, projectVariables, () => {});
+  renderKeyValueList(projectVariablesContainer, projectVariables, () => {}, true);
   
   projectModal.classList.add('hidden');
   projectFormModal.classList.remove('hidden');
@@ -3897,9 +4054,19 @@ methodOptions.forEach(option => {
   });
 });
 
-addParamBtn?.addEventListener('click', () => addKeyValue(queryParams, paramsContainer, debouncedSaveCurrentTab));
-addHeaderBtn?.addEventListener('click', () => addKeyValue(headers, headersContainer, debouncedSaveCurrentTab));
-addFormFieldBtn?.addEventListener('click', () => addKeyValue(formFields, bodyFormDataContainer, debouncedSaveCurrentTab));
+addParamBtn?.addEventListener('click', () => {
+  syncArrayFromDOM(paramsContainer, queryParams);
+  addKeyValue(queryParams, paramsContainer, debouncedSaveCurrentTab, true);
+});
+addHeaderBtn?.addEventListener('click', () => {
+  syncArrayFromDOM(headersContainer, headers);
+  addKeyValue(headers, headersContainer, debouncedSaveCurrentTab, true);
+});
+
+addFormFieldBtn?.addEventListener('click', () => {
+  syncArrayFromDOM(bodyFormDataContainer, formFields);
+  addKeyValue(formFields, bodyFormDataContainer, debouncedSaveCurrentTab, true);
+});
 
 bodyTypeSelect?.addEventListener('change', () => {
   const type = bodyTypeSelect.value;
@@ -3962,6 +4129,48 @@ formatSelect?.addEventListener('change', () => {
   }
 });
 
+// fetchButton?.addEventListener('click', async () => {
+//   try {
+//     fetchButton.disabled = true;
+//     fetchButton.textContent = 'Sending...';
+    
+//     saveCurrentTab();
+    
+//     const request = buildRequest(
+//       currentMethod,
+//       urlInput,
+//       paramsContainer,
+//       headersContainer,
+//       bodyTypeSelect,
+//       bodyRawTextarea,
+//       bodyJsonTextarea,
+//       bodyFormDataContainer,
+//       authTypeSelect,
+//       currentProject?.id
+//     );
+    
+//     const processedRequest = { ...request };
+//     processedRequest.url = replaceVariables(request.url, currentProject);
+    
+//     const response = await window.electron.sendRequest(processedRequest);
+    
+//     lastResponse = response;
+//     displayResponse(response, currentFormat, resultDiv, statusCodeSpan, responseTimeSpan, responseSizeSpan);
+//     displayNetworkInfo(response.networkInfo);
+//     displayResponseHeaders(response.headers);
+//     saveCurrentTab();
+//   } catch (error) {
+//     console.error(error);
+//     statusCodeSpan.textContent = 'Error';
+//     statusCodeSpan.className = 'text-red-400 font-semibold';
+//     resultDiv.textContent = `Error: ${(error as Error).message}`;
+//     displayNetworkInfo(undefined);
+//     displayResponseHeaders({});
+//   } finally {
+//     fetchButton.disabled = false;
+//     fetchButton.textContent = 'Send';
+//   }
+// });
 fetchButton?.addEventListener('click', async () => {
   try {
     fetchButton.disabled = true;
@@ -3982,8 +4191,31 @@ fetchButton?.addEventListener('click', async () => {
       currentProject?.id
     );
     
+    console.log('Original request:', request);
+    console.log('Current project:', currentProject);
+    console.log('Original query params:', request.queryParams);
+    
     const processedRequest = { ...request };
+    
+    // Replace variables in URL
     processedRequest.url = replaceVariables(request.url, currentProject);
+    
+    // Replace variables in query params
+    processedRequest.queryParams = request.queryParams.map(param => ({
+      ...param,
+      key: replaceVariables(param.key, currentProject),
+      value: replaceVariables(param.value, currentProject)
+    }));
+    
+    console.log('Processed query params:', processedRequest.queryParams);
+    console.log('Full processed request:', processedRequest);
+    
+    // Replace variables in headers
+    processedRequest.headers = request.headers.map(header => ({
+      ...header,
+      key: replaceVariables(header.key, currentProject),
+      value: replaceVariables(header.value, currentProject)
+    }));
     
     const response = await window.electron.sendRequest(processedRequest);
     
@@ -4140,7 +4372,7 @@ createProjectBtn?.addEventListener('click', () => {
 });
 
 addProjectVariableBtn?.addEventListener('click', () => {
-  addKeyValue(projectVariables, projectVariablesContainer, () => {});
+  addKeyValue(projectVariables, projectVariablesContainer, () => {}, true);
 });
 
 saveProjectFormBtn?.addEventListener('click', async () => {
@@ -4150,17 +4382,8 @@ saveProjectFormBtn?.addEventListener('click', async () => {
     return;
   }
   
-  const variableRows = projectVariablesContainer.querySelectorAll('.flex');
-  const variables: KeyValue[] = [];
-  variableRows.forEach(row => {
-    const checkbox = row.querySelector('input[type="checkbox"]') as HTMLInputElement;
-    const inputs = row.querySelectorAll('input[type="text"]') as NodeListOf<HTMLInputElement>;
-    variables.push({
-      key: inputs[0].value,
-      value: inputs[1].value,
-      enabled: checkbox.checked
-    });
-  });
+  // Sync the variables from DOM before saving
+  syncArrayFromDOM(projectVariablesContainer, projectVariables);
   
   const project: Project = editingProjectId
     ? { ...projects.find(p => p.id === editingProjectId)!, updatedAt: Date.now() }
@@ -4177,7 +4400,7 @@ saveProjectFormBtn?.addEventListener('click', async () => {
   project.name = name;
   project.description = projectDescInput.value.trim();
   project.baseUrl = projectBaseUrlInput.value.trim();
-  project.variables = variables;
+  project.variables = projectVariables;  // Use the synced array directly
   
   await saveProject(project);
   
@@ -4268,7 +4491,7 @@ loadProjects().then(() => {
 <file path="package.json">
 {
   "name": "req-rep.io-electron",
-  "version": "0.1.15-a",
+  "version": "0.1.18-a",
   "description": "App to test API endpoints using curl and electron",
   "license": "ISC",
   "author": "Sigmund Frost",
@@ -4299,47 +4522,52 @@ loadProjects().then(() => {
     "highlight.js": "^11.9.0"
   },
   "build": {
-    "appId": "com.reqrep.io",
-    "productName": "Req-Rep.io",
-    "files": [
-      "dist/**/*",
-      "index.html",
-      "styles.css",
-      "node_modules/**/*"
-    ],
-    "extraResources": [
+  "appId": "com.reqrep.io",
+  "productName": "Req-Rep.io",
+  "files": [
+    "dist/**/*",
+    "index.html",
+    "styles.css",
+    "node_modules/**/*",
+    "build/icons/**/*",
+    "build/icon.png"
+  ],
+  "extraResources": [
+    {
+      "from": "build/icons",
+      "to": "build/icons",
+      "filter": ["**/*"]
+    }
+  ],
+  "asarUnpack": [
+    "build/icons/**/*"
+  ],
+  "directories": {
+    "output": "release"
+  },
+  "win": {
+    "target": [
       {
-        "from": "build/icons",
-        "to": "build/icons",
-        "filter": ["**/*"]
+        "target": "portable",
+        "arch": [
+          "x64",
+          "ia32",
+          "arm64"
+        ]
       }
     ],
-    "directories": {
-      "output": "release"
-    },
-    "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": [
-            "x64",
-            "ia32",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "build/icons/win/icon.ico"
-    },
-    "mac": {
-      "icon": "build/icons/mac/icon.icns",
-      "category": "public.app-category.developer-tools"
-    },
-    "linux": {
-      "icon": "build/icons/png/512x512.png",
-      "target": ["AppImage", "deb"],
-      "category": "Development"
-    }
+    "icon": "build/icons/win/icon.ico"
+  },
+  "mac": {
+    "icon": "build/icons/mac/icon.icns",
+    "category": "public.app-category.developer-tools"
+  },
+  "linux": {
+    "icon": "build/icons/png/512x512.png",
+    "target": ["AppImage", "deb"],
+    "category": "Development"
   }
+}
 }
 </file>
 
